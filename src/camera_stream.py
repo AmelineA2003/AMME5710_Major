@@ -5,9 +5,11 @@ import time
 
 # Setup filenames with timestamp
 timestamp = int(time.time())
-bag_filename = f"realsense_recording_{timestamp}.bag"
-rgb_filename = f"realsense_rgb_{timestamp}.mp4"
-depth_filename = f"realsense_depth_{timestamp}.mp4"
+name = 'T10_seq-123456789_dist-2.44'
+num = '1'
+bag_filename = f"{name}_{timestamp}.bag"
+rgb_filename = f"{name}_rgb_{timestamp}.mp4"
+depth_filename = f"{name}_depth_{timestamp}.mp4"
 
 # Configure RealSense pipeline
 pipeline = rs.pipeline()
