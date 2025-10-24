@@ -5,7 +5,7 @@ import time
 
 # Setup filenames with timestamp
 timestamp = int(time.time())
-name = 'T10_seq-123456789_dist-2.44'
+name = 'ameline_test_d-'
 num = '1'
 bag_filename = f"{name}_{timestamp}.bag"
 rgb_filename = f"{name}_rgb_{timestamp}.mp4"
