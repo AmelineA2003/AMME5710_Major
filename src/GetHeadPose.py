@@ -165,7 +165,8 @@ def GetHeadPose(image_path, output_path=None):
 # Example usage:
 if __name__ == "__main__":
     import glob
-    folder_path = "AFLW2000-3D/AFLW2000/"
+    # folder_path = "AFLW2000-3D/AFLW2000/"
+    folder_path = os.getcwd()
     jpg_files = glob.glob(os.path.join(folder_path, "*.jpg"))
     print(f"Found {len(jpg_files)} .jpg files in {folder_path}")
     for image_path in jpg_files:
