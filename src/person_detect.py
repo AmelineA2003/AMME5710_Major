@@ -1,7 +1,8 @@
 # person_detect.py
-# Non-ML "RULES" detector (motion + shape + edges + NMS) with rich debug artefacts,
-# while preserving HOG and YOLO backends. Use DETECTOR_MODE="RULES" to run the
-# motion/shape/edge pipeline. Exposes detect_people(...) and detect_people_debug(...).
+# RULES (non-ML) detector with rich debug artefacts, now resolution-invariant.
+# HOG and YOLO back-ends are preserved. Public APIs:
+#   - detect_people(frame, frame_idx=0) -> [[x,y,w,h,score], ...]
+#   - detect_people_debug(frame, frame_idx=0) -> (final, debug_dict)
 
 from typing import List, Tuple, Dict, Optional
 import cv2
@@ -13,11 +14,11 @@ import numpy as np
 DETECTOR_MODE = "RULES"     # "RULES" | "HOG" | "YOLO"
 
 USE_YOLO = False            # used only if DETECTOR_MODE == "YOLO"
-detector_name = "RULES"     # updated on init below
+detector_name = "RULES"
 yolo_model = None
 
 # -----------------------------
-# HOG config (used if DETECTOR_MODE == "HOG")
+# HOG config (if DETECTOR_MODE == "HOG")
 # -----------------------------
 HOG_HIT_THRESHOLD = 0.0
 HOG_WINSTRIDE = (8, 8)
@@ -29,42 +30,34 @@ HOG_NMS_IOU = 0.50
 HOG_SCORE_THRESH = 0.20
 HOG_USE_WBF = False  # we keep a simple WBF stub below; NMS is default/faster
 
-HOG_USE_MEANSHIFT_GROUPING = True     # note: not used here (portable call)
-HOG_FINAL_THRESHOLD = 2.0             # note: not used here (portable call)
-
-# Full-body shaping (used by all backends that output boxes)
+# Full-body shaping (shared)
 FULLBODY_TARGET_AR = 0.45
 FULLBODY_EXPAND = 0.12
 
-# Optional GrabCut for HOG (kept for compatibility; off by default in RULES)
-HOG_REFINE = None           # "grabcut" or None
-HOG_GRABCUT_ITERS = 3
-HOG_GRABCUT_INNER = 0.60
-
 # -----------------------------
-# RULES detector knobs (no-ML)
+# RULES detector knobs (resolution-invariant)
 # -----------------------------
 # Background subtraction (MOG2 — adaptive/unsupervised)
 RULES_BG_HISTORY = 300
 RULES_BG_VARTHRESH = 16
 RULES_BG_SHADOWS = True
-RULES_MOTION_BIN_THRESH = 127          # threshold on MOG2 mask to binarize
+RULES_MOTION_BIN_THRESH = 127          # threshold on MOG2 mask to binarize (0..255)
 RULES_MOTION_MIN_OVERLAP = 0.12        # fraction of box area that must be foreground
 
-# Morphology to clean the motion mask
-RULES_MORPH_OPEN = 3                   # kernel size; set 0 to disable
-RULES_MORPH_CLOSE = 5                  # kernel size; set 0 to disable
-
-# Geometric gates
-RULES_MIN_AREA = 40 * 40               # reject tiny blobs
+# RESOLUTION-INVARIANT geometry/morph settings
+RULES_MIN_AREA_FRAC = 0.015           # min blob area as a fraction of frame area (e.g., 0.15%)
 RULES_ASPECT_MIN = 0.30
 RULES_ASPECT_MAX = 0.80
 
-# Edge-density scoring
-RULES_EDGE_MAG_THRESH = 25             # Sobel mag threshold (0..255) for "edge pixels"
-RULES_EDGE_MIN_FRAC = 0.05             # min fraction of edge pixels in the crop
+# Morphology kernel sizes as a fraction of the *short* side
+RULES_MORPH_OPEN_FRAC  = 0.006         # e.g., 0.6% of min(H,W)
+RULES_MORPH_CLOSE_FRAC = 0.010         # e.g., 1.0% of min(H,W)
 
-# NMS (XYWH)
+# Edge-density scoring (kept absolute; gradients are already scale-normalized)
+RULES_EDGE_MAG_THRESH = 25             # Sobel mag threshold (0..255) for "edge pixels"
+RULES_EDGE_MIN_FRAC   = 0.05           # min fraction of edge pixels in the crop
+
+# NMS
 RULES_NMS_IOU = 0.50
 
 # Process throttling (1 = every frame)
@@ -101,7 +94,7 @@ if DETECTOR_MODE == "RULES":
     detector_name = "RULES"
 
 # -----------------------------
-# Utility: NMS in XYWH
+# Utils
 # -----------------------------
 def _nms_xywh(dets: List[List[float]], iou_thresh: float) -> List[List[float]]:
     if not dets:
@@ -110,7 +103,7 @@ def _nms_xywh(dets: List[List[float]], iou_thresh: float) -> List[List[float]]:
     scores = np.array([d[4] if len(d) > 4 else 1.0 for d in dets], dtype=np.float32)
     x1, y1, x2, y2 = boxes.T
     areas = (x2 - x1) * (y2 - y1)
-    idxs = scores.argsort()[::-1]  # high->low
+    idxs = scores.argsort()[::-1]
     keep_idxs = []
     while idxs.size > 0:
         i = idxs[0]
@@ -132,9 +125,6 @@ def _clip_box_to_image(x, y, w, h, W, H):
     x = min(x, max(0, x2 - 1)); y = min(y, max(0, y2 - 1))
     return [x, y, max(0, x2 - x), max(0, y2 - y)]
 
-# -----------------------------
-# Rich debug helpers (images)
-# -----------------------------
 def _get_mog2_background() -> Optional[np.ndarray]:
     """Return BGR background snapshot from MOG2 (None in early frames)."""
     try:
@@ -147,13 +137,10 @@ def _edge_heatmap_u8(frame: np.ndarray) -> np.ndarray:
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     gx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
     gy = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
-    mag = cv2.magnitude(gx, gy)                # float32
+    mag = cv2.magnitude(gx, gy)
     mag = cv2.normalize(mag, None, 0, 255, cv2.NORM_MINMAX)
     return mag.astype(np.uint8)
 
-# -----------------------------
-# Full-body shaper (shared)
-# -----------------------------
 def _shape_fullbody(dets, target_ar=0.45, expand=0.12):
     shaped = []
     for x, y, w, h, s in dets:
@@ -177,6 +164,31 @@ def _shape_fullbody(dets, target_ar=0.45, expand=0.12):
         h2 = int(round(h))
         shaped.append([x2, y2, w2, h2, s])
     return shaped
+
+# --- NEW: resolution-aware derivation helpers ---
+def _round_odd(n: float) -> int:
+    n = max(1, int(round(n)))
+    return n if n % 2 == 1 else n + 1
+
+def _derive_rules_params(H: int, W: int):
+    """Derive pixel thresholds from resolution-invariant fractions."""
+    frame_area = float(H * W)
+    short_side = float(min(H, W))
+
+    min_area_px = int(round(RULES_MIN_AREA_FRAC * frame_area))
+    k_open  = _round_odd(RULES_MORPH_OPEN_FRAC  * short_side)
+    k_close = _round_odd(RULES_MORPH_CLOSE_FRAC * short_side)
+
+    # guardrails
+    min_area_px = max(1, min_area_px)
+    k_open  = max(1, k_open)
+    k_close = max(1, k_close)
+
+    return {
+        "MIN_AREA_PX": min_area_px,
+        "K_OPEN":  k_open,
+        "K_CLOSE": k_close,
+    }
 
 # OPTIONAL: WBF-like merge (HOG path)
 def _wbf_merge(dets: List[List[float]], score_thresh: float, iou: float) -> List[List[float]]:
@@ -210,12 +222,18 @@ def _wbf_merge(dets: List[List[float]], score_thresh: float, iou: float) -> List
     return merged
 
 # -----------------------------
-# RULES detector (with rich debug)
+# RULES detector (rich debug, resolution-aware)
 # -----------------------------
 def detect_people_rules(frame: np.ndarray, frame_idx: int = 0) -> Tuple[List[List[float]], Dict[str, List[List[float]]]]:
     """RULES detector with debug artefacts. Returns (final_boxes, debug_dict)."""
     debug: Dict[str, List[List[float]]] = {}
     H, W = frame.shape[:2]
+
+    # derive resolution-aware params
+    d = _derive_rules_params(H, W)
+    MIN_AREA_PX = d["MIN_AREA_PX"]
+    K_OPEN  = d["K_OPEN"]
+    K_CLOSE = d["K_CLOSE"]
 
     # 0) Background snapshot BEFORE update (may be None early on)
     bg_img = _get_mog2_background() if _bg is not None else None
@@ -224,12 +242,12 @@ def detect_people_rules(frame: np.ndarray, frame_idx: int = 0) -> Tuple[List[Lis
     m_raw = _bg.apply(frame)  # 0..255 (shadows ~127)
     mask = (m_raw > RULES_MOTION_BIN_THRESH).astype(np.uint8)
 
-    # morphology
-    if RULES_MORPH_OPEN and RULES_MORPH_OPEN > 1:
-        k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (RULES_MORPH_OPEN, RULES_MORPH_OPEN))
+    # morphology with resolution-aware kernels
+    if K_OPEN > 1:
+        k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (K_OPEN, K_OPEN))
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, k, iterations=1)
-    if RULES_MORPH_CLOSE and RULES_MORPH_CLOSE > 1:
-        k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (RULES_MORPH_CLOSE, RULES_MORPH_CLOSE))
+    if K_CLOSE > 1:
+        k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (K_CLOSE, K_CLOSE))
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, k, iterations=1)
 
     # 1b) Abs difference to background (for viz)
@@ -245,7 +263,7 @@ def detect_people_rules(frame: np.ndarray, frame_idx: int = 0) -> Tuple[List[Lis
     raw = []
     for c in cnts:
         x, y, w, h = cv2.boundingRect(c)
-        if w * h < RULES_MIN_AREA:
+        if w * h < MIN_AREA_PX:
             continue
         ar = w / max(h, 1e-6)
         if not (RULES_ASPECT_MIN <= ar <= RULES_ASPECT_MAX):
@@ -300,7 +318,6 @@ def detect_people_rules(frame: np.ndarray, frame_idx: int = 0) -> Tuple[List[Lis
 # HOG backend (portable call)
 # -----------------------------
 def detect_people_hog(frame) -> List[List[float]]:
-    # portable signature (no unsupported kwargs)
     try:
         rects, weights = hog.detectMultiScale(
             frame,
@@ -313,8 +330,6 @@ def detect_people_hog(frame) -> List[List[float]]:
         rects, weights = hog.detectMultiScale(frame)
 
     raw = [[int(x), int(y), int(w), int(h), float(s)] for (x, y, w, h), s in zip(rects, weights)]
-
-    # Merge -> shape
     if HOG_MERGE:
         if HOG_USE_WBF:
             merged = _wbf_merge(raw, HOG_SCORE_THRESH, HOG_NMS_IOU)
@@ -322,7 +337,6 @@ def detect_people_hog(frame) -> List[List[float]]:
             merged = _nms_xywh([d for d in raw if d[4] >= HOG_SCORE_THRESH], HOG_NMS_IOU)
     else:
         merged = raw
-
     shaped = _shape_fullbody(merged, target_ar=FULLBODY_TARGET_AR, expand=FULLBODY_EXPAND)
     return shaped
 
@@ -355,7 +369,6 @@ def detect_people(frame: np.ndarray, frame_idx: int = 0) -> List[List[float]]:
         return detect_people_yolo(frame)
     if DETECTOR_MODE == "HOG" and (hog is not None):
         return detect_people_hog(frame)
-    # RULES (default)
     final, _ = detect_people_rules(frame, frame_idx)
     return final
 
