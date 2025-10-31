@@ -1,5 +1,11 @@
 import cv2
 import numpy as np
+import mediapipe as mp
+
+
+# Flag for mediapipe or traditional CV implementation 
+flag_traditional = True
+
 
 ################################### FUNCTIONS ################################
 
@@ -46,13 +52,23 @@ def extend_gaze_vector(eye_center, pupil_center_abs, frame_size, board_size, sca
 
     return gx, gy
 
-################################### MAIN LOOP ################################
+################################### TRADITIONAL SETUP ################################
 
 eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_eye.xml")
 cap = cv2.VideoCapture("ameline_test_d-_rgb_1761129562.mp4")
 
 board_img = cv2.imread("board.png")
 board_h, board_w = board_img.shape[:2]
+
+
+################################### MEDIAPIPE SETUP ################################
+
+mp_face_mesh = mp.solutions.face_mesh
+face_mesh = mp_face_mesh.FaceMesh(static_image_mode=False,
+                                  max_num_faces=1,
+                                  refine_landmarks=True,
+                                  min_detection_confidence=0.5,
+                                  min_tracking_confidence=0.5)
 
 while True:
     ret, frame = cap.read()

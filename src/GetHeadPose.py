@@ -1,6 +1,6 @@
 import cv2
 import numpy as np
-import mediapipe as mp
+import gaze_mediapipe as mp
 import os
 
 def GetHeadPose(image_path, output_path=None):

@@ -22,6 +22,8 @@ def detect_pupil_center(img):
     return (cX, cY)
 
 
+# Get rid of intrinsics - perspective projection 
+
 def project_gaze(K, pupil_center, depth):
     fx, fy = K[0,0], K[1,1]
     cx, cy = K[0,2], K[1,2]
