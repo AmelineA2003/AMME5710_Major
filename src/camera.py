@@ -26,8 +26,8 @@ def get_next_index(prefix='jestin', directory='.'):
 # Configure RealSense streams
 pipeline = rs.pipeline()
 config = rs.config()
-config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
-config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
+config.enable_stream(rs.stream.depth, 1280, 720, rs.format.z16, 30)
+config.enable_stream(rs.stream.color, 1280, 720, rs.format.bgr8, 30)
 
 # Check for device
 ctx = rs.context()
@@ -97,8 +97,8 @@ try:
 
         key = cv2.waitKey(1) & 0xFF
         if key == ord('k'):
-            rgb_name = f"jestin_{save_index}_rgb.png"
-            pickle_name = f"jestin_{save_index}_height.pkl"
+            rgb_name = f"jestinp_{save_index}_rgb.png"
+            pickle_name = f"jestip_{save_index}_height.pkl"
 
             # Save RGB image (BGR)
             cv2.imwrite(rgb_name, color_image)
