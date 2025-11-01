@@ -4,6 +4,22 @@ import mediapipe as mp
 
 ################################### SETUP ################################
 
+# Subject distance from board (meters)
+D_subject = 0.32
+
+# Physical board dimensions (meters, A4)
+board_w_m, board_h_m = 0.297, 0.210
+
+# Camera intrinsics (replace with your real values)
+fx = 920.91
+fy = 920.424
+cx = 640  # image center x
+cy = 360  # image center y
+K = np.array([[fx, 0, cx],
+              [0, fy, cy],
+              [0,  0,  1]])
+
+# MediaPipe face mesh
 mp_face_mesh = mp.solutions.face_mesh
 face_mesh = mp_face_mesh.FaceMesh(static_image_mode=False,
                                   max_num_faces=1,
@@ -11,22 +27,43 @@ face_mesh = mp_face_mesh.FaceMesh(static_image_mode=False,
                                   min_detection_confidence=0.5,
                                   min_tracking_confidence=0.5)
 
-cap = cv2.VideoCapture("ameline_test_d-_rgb_1761129562.mp4")
+# Video & board
+# cap = cv2.VideoCapture("ameline_test_d-_rgb_1761129562.mp4")
+cap = cv2.VideoCapture("test_AMELINE_30cm_eye_HD_rgb_1761970095.mp4")
 board_img = cv2.imread("board.png")
 board_h, board_w = board_img.shape[:2]
 
-def extend_gaze_vector(eye_center, pupil_center_abs, frame_size, board_size, scale=5.0):
+################################### FUNCTIONS ################################
+
+def project_gaze_using_intrinsics(pupil_abs, K, D_subject, board_size, board_phys_size, frame_size):
+    """
+    Projects gaze from pupil pixel coordinates onto board using camera intrinsics.
+    """
     frame_w, frame_h = frame_size
     board_w, board_h = board_size
+    board_w_m, board_h_m = board_phys_size
 
-    dx = pupil_center_abs[0] - eye_center[0]
-    dy = pupil_center_abs[1] - eye_center[1]
+    u, v = pupil_abs
 
-    gx = int(board_w/2 + dx * (board_w / frame_w) * scale)
-    gy = int(board_h/2 + dy * (board_h / frame_h) * scale)
+    # normalized camera coordinates relative to image center
 
-    gx = np.clip(gx, 0, board_w-1)
-    gy = np.clip(gy, 0, board_h-1)
+    x_n = (u - frame_w/2) / K[0,0]
+    y_n = (v - frame_h/2) / K[1,1]
+    g = np.array([x_n, y_n, 1.0])
+    g /= np.linalg.norm(g)
+    eye_pos = np.array([0.0, 0.0, D_subject])
+    t = -eye_pos[2] / g[2]
+    hit_point = eye_pos + t * g
+
+    x_board, y_board = hit_point[0], hit_point[1]
+
+    # Map meters to board pixels
+    px_per_m_x = board_w / board_w_m
+    px_per_m_y = board_h / board_h_m
+    gx = int(board_w / 2 + x_board * px_per_m_x)
+    gy = int(board_h / 2 - y_board * px_per_m_y)  # y inverted
+
+
     return gx, gy
 
 ################################### MAIN LOOP ################################
@@ -44,10 +81,10 @@ while True:
     if results.multi_face_landmarks:
         face_landmarks = results.multi_face_landmarks[0]
 
-        # MediaPipe eye indices (refined landmarks)
-        left_eye_indices = [33, 133]  # approximate left eye corners
-        right_eye_indices = [362, 263]  # approximate right eye corners
-        left_pupil_index = 468  # iris center
+        # MediaPipe eye indices (approximate)
+        left_eye_indices = [33, 133]
+        right_eye_indices = [362, 263]
+        left_pupil_index = 468
         right_pupil_index = 473
 
         eyes = []
@@ -69,12 +106,12 @@ while True:
         eyes.append((right_eye_center, right_pupil_abs))
 
         for eye_center, pupil_center_abs in eyes:
-            # Compute gaze projection
-            gx, gy = extend_gaze_vector(
-                eye_center, pupil_center_abs,
-                frame_size=(frame_w, frame_h),
+            # Compute gaze projection using camera intrinsics
+            gx, gy = project_gaze_using_intrinsics(
+                pupil_center_abs, K, D_subject,
                 board_size=(board_w, board_h),
-                scale=30.0
+                board_phys_size=(board_w_m, board_h_m),
+                frame_size=(frame_w, frame_h)
             )
 
             # Draw on frame
