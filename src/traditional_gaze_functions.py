@@ -53,18 +53,29 @@ def detect_eye_center(img):
 
 def detect_eye_center_2(img): 
 
-    gray = cv2.GaussianBlur(img, (5,5), 0)
+    # gray = cv2.GaussianBlur(img, (5,5), 0)
+
+    gray = cv2.medianBlur(img, 5)
     
-    thresh = cv2.adaptiveThreshold(
-        gray, 255,
-        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY_INV,
-        blockSize=11,  # neighborhood size
-        C=5           # constant to subtract
-    )
+    # thresh = cv2.adaptiveThreshold(
+    #     gray, 255,
+    #     cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+    #     cv2.THRESH_BINARY_INV,
+    #     blockSize=11,  # neighborhood size
+    #     C=5           # constant to subtract
+    # )
+
+    _, thresh = cv2.threshold(
+    gray, 100, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU
+    )   
+
+    # mean = np.mean(gray)
+    # _, thresh = cv2.threshold(gray, mean*0.6, 255, cv2.THRESH_BINARY_INV)
+
     
-    # Morphological operations to merge regions (optional)
+    # Morphological operations to merge regions 
     kernel = np.ones((3,3), np.uint8)
+    thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel, iterations=1)
     thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel, iterations=2)
     
     # Find contours
@@ -78,6 +89,7 @@ def detect_eye_center_2(img):
         if len(biggest) >= 5:  
             ellipse = cv2.fitEllipse(biggest)
             eye_center = (int(ellipse[0][0]), int(ellipse[0][1]))
+    
 
     return eye_center
             
@@ -128,7 +140,7 @@ def traditional_gaze_tracker(cap):
                         cv2.rectangle(frame, (abs_x, abs_y), (abs_x+ew, abs_y+eh), (0, 255, 0), 2)
 
                         pupil_center_rel = detect_pupil_center_2(eye_crop)
-                        eye_center = detect_eye_center(gray_eye)
+                        eye_center = detect_eye_center_2(gray_eye)
 
                         if pupil_center_rel is not None and eye_center is not None:
                             # Absolute coordinates

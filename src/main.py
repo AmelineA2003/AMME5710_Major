@@ -12,10 +12,10 @@ from ml_gaze_functions import mediapipe_gaze_tracker
 # cap = cv2.VideoCapture("test_JESTIN_30cm_eye_HD_rgb_1761970129.mp4")
 # cap = cv2.VideoCapture("ameline_test_d-_rgb_1761129562.mp4")
 # cap = cv2.VideoCapture("ameline_with_light_rgb.mp4")
-# cap = cv2.VideoCapture("IMG_0595.mp4")
+cap = cv2.VideoCapture("IMG_0595.mp4")
 # cap = cv2.VideoCapture("IMG_0588.mp4")
-cap = cv2.VideoCapture("jestin_video_1_rgb.mp4")
-
+# cap = cv2.VideoCapture("jestin_video_1_rgb.mp4")
+# cap = cv2.VideoCapture("jestin_video_2_rgb.mp4")
 
 mp_face_mesh = mp.solutions.face_mesh
 mp_drawing = mp.solutions.drawing_utils
