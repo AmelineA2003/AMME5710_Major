@@ -100,36 +100,41 @@ def traditional_gaze_tracker(frame, bbox, draw=True):
 
     faces = face_cascade.detectMultiScale(gray_roi, 1.1, 5, minSize=(50,50))
 
-    for (fx, fy, fw, fh) in faces:
-        abs_fx, abs_fy = x + fx, y + fy
-        if draw:
-            cv2.rectangle(frame, (abs_fx, abs_fy), (abs_fx+fw, abs_fy+fh), (255, 0, 0), 2)
-        info["faces"].append((abs_fx, abs_fy, fw, fh))
+    if len(faces) > 0:
+        # Sort faces by area (w*h) descending
+        faces = sorted(faces, key=lambda f: f[2]*f[3], reverse=True)
+        faces = [faces[0]]  # Keep only the largest
 
-        face_crop = person_roi[fy:fy+fh, fx:fx+fw]
-        gray_face = gray_roi[fy:fy+fh, fx:fx+fw]
-
-        eyes = eye_cascade.detectMultiScale(gray_face, 1.1, 5, minSize=(10,10))
-        eyes = sorted(eyes, key=lambda e: e[1])[:2]
-
-        for (ex, ey, ew, eh) in eyes:
-            abs_ex, abs_ey = abs_fx + ex, abs_fy + ey
-            eye_crop = frame[abs_ey:abs_ey+eh, abs_ex:abs_ex+ew].copy()
-            gray_eye = cv2.cvtColor(eye_crop, cv2.COLOR_BGR2GRAY)
-
+        for (fx, fy, fw, fh) in faces: 
+            abs_fx, abs_fy = x + fx, y + fy
             if draw:
-                cv2.rectangle(frame, (abs_ex, abs_ey), (abs_ex+ew, abs_ey+eh), (0, 255, 0), 2)
+                cv2.rectangle(frame, (abs_fx, abs_fy), (abs_fx+fw, abs_fy+fh), (255, 0, 0), 2)
+            info["faces"].append((abs_fx, abs_fy, fw, fh))
 
-            pupil_center = detect_pupil_center_2(eye_crop)
-            eye_center = detect_eye_center(gray_eye)
+            face_crop = person_roi[fy:fy+fh, fx:fx+fw]
+            gray_face = gray_roi[fy:fy+fh, fx:fx+fw]
 
-            if pupil_center is not None and eye_center is not None:
-                pupil_abs = (abs_ex + pupil_center[0], abs_ey + pupil_center[1])
-                eye_abs = (abs_ex + eye_center[0], abs_ey + eye_center[1])
-                info["eyes"].append(eye_abs)
-                info["pupils"].append(pupil_abs)
+            eyes = eye_cascade.detectMultiScale(gray_face, 1.1, 5, minSize=(10,10))
+            eyes = sorted(eyes, key=lambda e: e[1])[:2]
+
+            for (ex, ey, ew, eh) in eyes:
+                abs_ex, abs_ey = abs_fx + ex, abs_fy + ey
+                eye_crop = frame[abs_ey:abs_ey+eh, abs_ex:abs_ex+ew].copy()
+                gray_eye = cv2.cvtColor(eye_crop, cv2.COLOR_BGR2GRAY)
+
                 if draw:
-                    cv2.circle(frame, pupil_abs, 4, (0, 0, 255), -1)
-                    cv2.circle(frame, eye_abs, 4, (255, 255, 0), -1)
+                    cv2.rectangle(frame, (abs_ex, abs_ey), (abs_ex+ew, abs_ey+eh), (255, 0, 255), 2)
+
+                pupil_center = detect_pupil_center_2(eye_crop)
+                eye_center = detect_eye_center(gray_eye)
+
+                if pupil_center is not None and eye_center is not None:
+                    pupil_abs = (abs_ex + pupil_center[0], abs_ey + pupil_center[1])
+                    eye_abs = (abs_ex + eye_center[0], abs_ey + eye_center[1])
+                    info["eyes"].append(eye_abs)
+                    info["pupils"].append(pupil_abs)
+                    if draw:
+                        cv2.circle(frame, pupil_abs, 4, (0, 0, 255), -1)
+                        cv2.circle(frame, eye_abs, 4, (255, 255, 0), -1)
 
     return info
