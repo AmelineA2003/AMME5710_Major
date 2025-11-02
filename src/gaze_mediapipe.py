@@ -5,7 +5,7 @@ import mediapipe as mp
 ################################### SETUP ################################
 
 # Subject distance from board (meters)
-D_subject = 0.32
+D_subject = 0.30
 
 # Physical board dimensions (meters, A4)
 board_w_m, board_h_m = 0.297, 0.210
@@ -28,8 +28,8 @@ face_mesh = mp_face_mesh.FaceMesh(static_image_mode=False,
                                   min_tracking_confidence=0.5)
 
 # Video & board
-# cap = cv2.VideoCapture("ameline_test_d-_rgb_1761129562.mp4")
-cap = cv2.VideoCapture("test_AMELINE_30cm_eye_HD_rgb_1761970095.mp4")
+cap = cv2.VideoCapture("ameline_test_d-_rgb_1761129562.mp4")
+# cap = cv2.VideoCapture("test_AMELINE_30cm_eye_HD_rgb_1761970095.mp4")
 board_img = cv2.imread("board.png")
 board_h, board_w = board_img.shape[:2]
 

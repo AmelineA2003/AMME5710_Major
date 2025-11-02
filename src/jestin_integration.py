@@ -148,4 +148,3 @@ def traditional_gaze_tracker(cap):
     cap.release()
     cv2.destroyAllWindows()
 
-
