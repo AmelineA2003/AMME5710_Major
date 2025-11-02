@@ -209,3 +209,4 @@ src/stereo/realsense_rgb_height.pkl
 src/jestin_video_1.pkl
 src/jestin_video_2.pkl
 src/jestin_video_2_rgb.mp4
+*.pkl
