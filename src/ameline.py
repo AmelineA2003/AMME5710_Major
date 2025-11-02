@@ -7,16 +7,12 @@ import numpy as np
 # cap = cv2.VideoCapture("test_JESTIN_30cm_eye_HD_rgb_1761970129.mp4")
 # cap = cv2.VideoCapture("ameline_test_d-_rgb_1761129562.mp4")
 # cap = cv2.VideoCapture("ameline_with_light_rgb.mp4")
-cap = cv2.VideoCapture("IMG_0595.mp4")
-# cap = cv2.VideoCapture("IMG_0588.mp4")
+# cap = cv2.VideoCapture("IMG_0595.mp4")
+cap = cv2.VideoCapture("IMG_0588.mp4")
 
 #################################### FUNCTIONS #################################
 
 def detect_pupil_center_2(img):
-    """
-    Simple pupil detection using threshold + contour.
-    Returns center (cx, cy) relative to the eye crop, or None.
-    """
     inverted = cv2.bitwise_not(img)
     gray = cv2.cvtColor(inverted, cv2.COLOR_BGR2GRAY)
     gray = cv2.medianBlur(gray, 5)
@@ -27,6 +23,7 @@ def detect_pupil_center_2(img):
     if not contours:
         return None
     biggest = max(contours, key=cv2.contourArea)
+    cv2.drawContours(img, [biggest], -1, (0, 255, 0), 2)  # green contour
     M = cv2.moments(biggest)
     if M["m00"] == 0:
         return None
@@ -35,11 +32,7 @@ def detect_pupil_center_2(img):
     return (cX, cY)
 
 
-def find_eye_center(img): 
-    """
-    Finds eye center by computing midpoint between left-most and right-most dark pixels.
-    Expects a grayscale image.
-    """
+def detect_eye_center(img): 
     img_copy = img.copy()
     mean = img_copy.mean()
     stddev = img_copy.std()
@@ -80,40 +73,53 @@ while True:
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
     # Detect faces
-    faces = face_cascade.detectMultiScale(gray, 1.1, 5, minSize=(50, 50))
+    faces = face_cascade.detectMultiScale(gray, 1.1, 5, minSize=(150, 150))
 
-    for (fx, fy, fw, fh) in faces:
-        face_roi = frame[fy:fy+fh, fx:fx+fw]
-        gray_face = gray[fy:fy+fh, fx:fx+fw]
+    if len(faces) > 0:
+        # Sort faces by area in descending order
+        faces = sorted(faces, key=lambda f: f[2] * f[3], reverse=True)
+        faces = [faces[0]]  # Keep only the largest face
 
-        # Draw face rectangle
-        cv2.rectangle(frame, (fx, fy), (fx+fw, fy+fh), (255, 0, 0), 2)
+        for (fx, fy, fw, fh) in faces:
+            face_roi = frame[fy:fy+fh, fx:fx+fw]
+            gray_face = gray[fy:fy+fh, fx:fx+fw]
 
-        # Detect eyes inside face
-        eyes = eye_cascade.detectMultiScale(gray_face, 1.1, 5, minSize=(20,20))
+            # Draw face rectangle
+            cv2.rectangle(frame, (fx, fy), (fx+fw, fy+fh), (255, 0, 0), 2)
 
-        for (ex, ey, ew, eh) in eyes:
-            abs_x, abs_y = fx + ex, fy + ey
-            eye_crop = frame[abs_y:abs_y+eh, abs_x:abs_x+ew].copy()
-            gray_eye = cv2.cvtColor(eye_crop, cv2.COLOR_BGR2GRAY)
+            # Detect eyes inside face
+            eyes = eye_cascade.detectMultiScale(gray_face, 1.1, 5, minSize=(20,20))
 
-            pupil_center_rel = detect_pupil_center_2(eye_crop)
-            eye_center = find_eye_center(gray_eye)
+            if len(eyes) > 0:
+                # Sort eyes by vertical position (y) ascending → top eyes first
+                eyes = sorted(eyes, key=lambda e: e[1])
+                # Keep only the two highest eyes
+                eyes = eyes[:2]
 
-            if pupil_center_rel is not None and eye_center is not None:
-                # Absolute coordinates
-                px, py = pupil_center_rel
-                pupil_center_abs = (abs_x + px, abs_y + py)
-                eye_center_abs = (abs_x + eye_center[0], abs_y + eye_center[1])
+                for (ex, ey, ew, eh) in eyes:
+                    abs_x, abs_y = fx + ex, fy + ey
+                    eye_crop = frame[abs_y:abs_y+eh, abs_x:abs_x+ew].copy()
+                    gray_eye = cv2.cvtColor(eye_crop, cv2.COLOR_BGR2GRAY)
 
-                # Draw eye rectangle, pupil, and eye center
-                cv2.rectangle(frame, (abs_x, abs_y), (abs_x+ew, abs_y+eh), (0, 255, 0), 2)
-                cv2.circle(frame, pupil_center_abs, 4, (0, 0, 255), -1)
-                cv2.circle(frame, eye_center_abs, 4, (255, 255, 0), -1)
+                    cv2.rectangle(frame, (abs_x, abs_y), (abs_x+ew, abs_y+eh), (0, 255, 0), 2)
+
+
+                    pupil_center_rel = detect_pupil_center_2(eye_crop)
+                    eye_center = detect_eye_center(gray_eye)
+
+                    if pupil_center_rel is not None and eye_center is not None:
+                        # Absolute coordinates
+                        px, py = pupil_center_rel
+                        pupil_center_abs = (abs_x + px, abs_y + py)
+                        eye_center_abs = (abs_x + eye_center[0], abs_y + eye_center[1])
+
+                        # Draw eye rectangle, pupil, and eye center
+                        cv2.circle(frame, pupil_center_abs, 4, (0, 0, 255), -1)
+                        cv2.circle(frame, eye_center_abs, 4, (255, 255, 0), -1)
 
     cv2.imshow("Face + Eye + Pupil Detection", frame)
 
-    if cv2.waitKey(1) & 0xFF == 27:  # ESC to exit
+    if cv2.waitKey(5) & 0xFF == 27:  # ESC to exit
         break
 
 cap.release()
