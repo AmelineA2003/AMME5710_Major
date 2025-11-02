@@ -38,8 +38,8 @@ def main():
 
     # --------------- TRACKER CONFIG --------------------
     tracker = TrackerReID(
-        iou_thresh=0.35,          # slightly higher
-        appearance_thresh=0.65,   # higher = stricter re-ID reuse
+        iou_thresh=0.45,          # slightly higher
+        appearance_thresh=0.70,   # higher = stricter re-ID reuse
         max_age=45                # time that boxes remain "active"
     )
 

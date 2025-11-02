@@ -63,7 +63,7 @@ def detect_eye_center_2(img):
         C=5           # constant to subtract
     )
     
-    # Morphological operations to merge regions (optional)
+    # Morphological operations to merge regions 
     kernel = np.ones((3,3), np.uint8)
     thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel, iterations=2)
     
