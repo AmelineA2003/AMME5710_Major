@@ -5,21 +5,18 @@ import mediapipe as mp
 
 # cap = cv2.VideoCapture("test_AMELINE_30cm_eye_HD_rgb_1761970095.mp4")
 # cap = cv2.VideoCapture("test_JESTIN_30cm_eye_HD_rgb_1761970129.mp4")
-# cap = cv2.VideoCapture("ameline_test_d-_rgb_1761129562.mp4")
-cap = cv2.VideoCapture("ameline_with_light_rgb.mp4")
+cap = cv2.VideoCapture("ameline_test_d-_rgb_1761129562.mp4")
+# cap = cv2.VideoCapture("ameline_with_light_rgb.mp4")
 
 #################################### FUNCTIONS #################################
 
 def detect_pupil_center_2(img):
-    """
-    Simple pupil detection using threshold + contour.
-    Returns center (cx, cy) relative to the eye crop, or None.
-    """
     inverted = cv2.bitwise_not(img)
     gray = cv2.cvtColor(inverted, cv2.COLOR_BGR2GRAY)
     gray = cv2.medianBlur(gray, 5)
     kernel = np.ones((3,3), np.uint8)
-    eroded = cv2.erode(gray, kernel, iterations=1)
+    # eroded = cv2.erode(gray, kernel, iterations=1)
+    eroded = cv2.morphologyEx(gray, cv2.MORPH_OPEN, kernel)
     _, thresh = cv2.threshold(eroded, 210, 255, cv2.THRESH_BINARY)
     contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
@@ -31,6 +28,7 @@ def detect_pupil_center_2(img):
     cX = int(M["m10"] / M["m00"])
     cY = int(M["m01"] / M["m00"])
     return (cX, cY)
+
 
 def extend_gaze_vector(eye_center, pupil_center_abs, frame_size, board_size, scale=5.0):
     """
@@ -49,8 +47,8 @@ def extend_gaze_vector(eye_center, pupil_center_abs, frame_size, board_size, sca
     gy = int(board_h/2 + dy * (board_h / frame_h) * scale)
 
     # Clamp to board boundaries
-    # gx = np.clip(gx, 0, board_w-1)
-    # gy = np.clip(gy, 0, board_h-1)
+    gx = np.clip(gx, 0, board_w-1)
+    gy = np.clip(gy, 0, board_h-1)
 
     return gx, gy
 
@@ -109,7 +107,7 @@ while True:
         gx, gy = extend_gaze_vector(eye_center, pupil_center_abs,
                                     frame_size=(frame_w, frame_h),
                                     board_size=(board_w, board_h),
-                                    scale=35.0)
+                                    scale=30.0)
 
         # Draw gaze on board
         cv2.circle(gaze_visual, (gx, gy), 8, (0, 0, 255), -1)
