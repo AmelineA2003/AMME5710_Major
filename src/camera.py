@@ -52,6 +52,7 @@ align = rs.align(rs.stream.color)
 # Next save index
 save_index = get_next_index(prefix='jestin', directory='.')
 
+
 try:
     timeout_count = 0
     max_timeouts = 3
