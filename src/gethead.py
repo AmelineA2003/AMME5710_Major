@@ -232,8 +232,8 @@ i = 0
 
 # folder_path = "AFLW2000-3D/AFLW2000/"
 folder_path = os.getcwd()
-jpg_files = glob.glob(os.path.join(folder_path, "*.jpg"))
-print(f"Found {len(jpg_files)} .jpg files in {folder_path}")
+jpg_files = glob.glob(os.path.join(folder_path, "*.png"))
+print(f"Found {len(jpg_files)} .png files in {folder_path}")
 
 for image_path in jpg_files:
     image_name = os.path.basename(image_path)
@@ -259,7 +259,7 @@ for image_path in jpg_files:
     # print("Head Pose Euler Angles:", result['angles'])
     # print("Rotation Matrix (Camera to Head Frame):\n", result['camera_to_head_rotation'])
     i = i + 1
-    if i >= 10:
+    if i >= 60:
         break
     #       # Wait for a key press indefinitely
    
@@ -281,5 +281,5 @@ if any(c.empty() for c in classifiers):
     print("Error: One or more cascade classifiers failed to load")
 
 
-show_nose(heads["emily8.jpg"]["im_rgb"])
+show_nose(heads["jestinp_45_rgb.png"]["im_rgb"])
 # show_webcam(heads["T2_seq-123456789_dist-1.09_rgb_4.jpg"]["im_rgb"])
