@@ -241,19 +241,87 @@ def GetHeadPose(face_cascade, eye_cascade, mouth_cascade, nose_cascade, img, hei
         print("No nose found\n")
         return img2
 
+    # YAW calculation
+
+    left_eye_vec = np.array(features["eye_left"])[:2]
+    right_eye_vec = np.array(features["eye_right"])[:2]
+    nose_vec = np.array([features["nose"]])[0][:2]
+    # print("huh")
+
+    eye_axis_vec = right_eye_vec - left_eye_vec
+
+    inter_eye_distance = np.linalg.norm(eye_axis_vec)
+    if inter_eye_distance == 0:
+        raise ValueError("Left and right eye coordinates are identical.")
+
+    # print(inter_eye_distance)
+
+    # print(inter_eye_distance, " - inter eye distance along the axis of the eyes")
+    # Unit vector along the eye axis
+    eye_axis_unit = eye_axis_vec / inter_eye_distance
+
+    # Vector from left eye to nose
+    left_to_nose = nose_vec - left_eye_vec
+
+    # Scalar projection of nose position onto the eye axis
+    nose_projection = np.dot(left_to_nose, eye_axis_unit)
+
+    # print(nose_projection, " - distance from left eye to nose along the axis of the eyes")
+    # Normalized position along the axis (-0.5 to +0.5 for centered nose)
+    normalized_position = nose_projection / inter_eye_distance
+    # print(normalized_position, " - inter eye distance to nose displacement ratio from left eye")
+
+    # Vector from left eye to nose
+    right_to_nose = nose_vec - right_eye_vec
+
+    # Scalar projection of nose position onto the eye axis
+    nose_projection = np.dot(right_to_nose, eye_axis_unit)
+
+    # print(nose_projection, " - distance from the right eye to the nose along the axis of the eyes")
+    # Normalized position along the axis (-0.5 to +0.5 for centered nose)
+    normalized_position = nose_projection / inter_eye_distance
+    # print(normalized_position, " - inter eye distance to nose displacement ratio from right eye")
+
+    # Asymmetry ratio (optional alternative metric)
+    # Maps normalized_position = 0 → 1.0 (symmetric)
+    # Positive values indicate shift toward right eye
+    denom_left = 0.5 - normalized_position
+    denom_right = 0.5 + normalized_position
+    asymmetry_ratio_yaw = (denom_right / denom_left) if denom_left != 0 else float('inf')
+
+    print(asymmetry_ratio_yaw, " - asymmetry ratio (right/left)")
+    yaw_deg = asymmetry_ratio_yaw * 180
+
+
+
+
+    # ROLL calculation
+
+    planar_vec = np.array([0, 1])  # reference up direction (y-axis)
+    orth_vec = np.array([-eye_axis_unit[1], eye_axis_unit[0]])  # perpendicular to eye axis
+
+    # Normalize both vectors (just to be safe)
+    planar_vec = planar_vec / np.linalg.norm(planar_vec)
+    orth_vec = orth_vec / np.linalg.norm(orth_vec)
+
+    # Compute signed angle using atan2
+    roll_rad = np.arctan2(
+        np.cross(planar_vec, orth_vec),   # sine term (determines sign)
+        np.dot(planar_vec, orth_vec)      # cosine term
+    )
+
+    roll_deg = np.degrees(roll_rad)
+
+
 
     # Finding Mouth
     exp_x = 0
     exp_y = 0
 
-    # fig = plt.figure(figsize = (20,10))
 
     i = 0
     for (mx, my, mw, mh) in mouth: 
 
-        # if i == 0:
-        #     i = i + 1
-        #     continue
 
         mouth_center = (int(x + mx + mw/2), int(y + my + mh/2))
         if mouth_center[1] < features['nose'][1] + 0.2*h:
@@ -327,10 +395,7 @@ def GetHeadPose(face_cascade, eye_cascade, mouth_cascade, nose_cascade, img, hei
         features["right_mouth"] = right_mouth
         features["left_mouth"] = left_mouth
         features["mid_mouth"] = np.array([int((right_mouth[0] + left_mouth[0])//2), int((right_mouth[1] + left_mouth[1])//2), height_m[int((right_mouth[1] + left_mouth[1])//2), int((right_mouth[0] + left_mouth[0])//2)]])
-        # plt.imshow(mouth_region_binary_dilate, cmap="gray")
-        # plt.imshow(mouth_region_gray_adjusted, cmap ="gray")
-        # plt.imshow(thresh_im1, cmap="gray")
-        # break
+
 
         cv2.circle(img2, (left_mouth[0], left_mouth[1]), 2, (0, 255, 255), 1)
         # cv2.circle(img2, (x + mx + leftmost_col, y + my + leftmost_row), 2, (0, 255, 255), 1)
@@ -348,6 +413,42 @@ def GetHeadPose(face_cascade, eye_cascade, mouth_cascade, nose_cascade, img, hei
         # plt.imshow(img2)
     except KeyError:
         print("no valid mouth\n")
+
+        pitch_deg = 0
+
+            # Compose rotation matrix (extrinsic Z-Y-X: yaw -> pitch -> roll)
+        # rvec = np.array([np.radians(yaw_deg), np.radians(pitch_deg), np.radians(roll_deg)])
+        rvec = np.array([ np.radians(pitch_deg), np.radians(roll_deg), np.radians(yaw_deg)])
+
+        # rvec = np.array([np.radians(yaw_deg), np.radians(pitch_deg), np.radians(roll_deg)])
+        R, _ = cv2.Rodrigues(rvec)  # Single 3x3 matrix from Rodriguez formula
+
+        # Unit axes in local frame (X forward, Y down, Z right for head pose convention)
+        axes = np.float32([[1, 0, 0], [0, 1, 0], [0, 0, 1]]).T
+        directions = R @ axes
+        directions /= np.linalg.norm(directions, axis=0)  # Normalize
+        directions *= 50  # Arrow length
+
+        # Project to 2D and draw (BGR colors: X-red, Y-green, Z-blue)
+        nose_pos = (int(features["nose"][0]), int(features["nose"][1]))
+        for i in range(3):
+            dx, dy, _ = directions[:, i]
+            end = (int(nose_pos[0] + dx), int(nose_pos[1] + dy))
+            color = [(0, 0, 255), (0, 255, 0), (255, 0, 0)][i]
+            cv2.arrowedLine(img2, nose_pos, end, color, 2, tipLength=0.3)
+
+
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 1
+        thickness = 2
+        text_roll = f"Roll: {roll_deg:.2f}"
+        # text_pitch = f"Pitch: {pitch_deg:.2f}"
+        text_pitch = f"Pitch: NULL"
+        text_yaw = f"Yaw: {yaw_deg:.2f}"
+        cv2.putText(img2, text_pitch, (5, 30), font, font_scale, (255, 255, 255), thickness+1)
+        cv2.putText(img2, text_yaw, (5, 30+30), font, font_scale, (255, 255, 255), thickness+1)
+        cv2.putText(img2, text_roll, (5, 30+60), font, font_scale, (255, 255, 255), thickness+1)
+
         return img2
 
     
@@ -363,75 +464,11 @@ def GetHeadPose(face_cascade, eye_cascade, mouth_cascade, nose_cascade, img, hei
 
     # plt.imshow(img2)
 
-    # YAW calculation
 
-    left_eye_vec = np.array(features["eye_left"])[:2]
-    right_eye_vec = np.array(features["eye_right"])[:2]
-    nose_vec = np.array([features["nose"]])[0][:2]
-    # print("huh")
-
-    eye_axis_vec = right_eye_vec - left_eye_vec
-
-    inter_eye_distance = np.linalg.norm(eye_axis_vec)
-    if inter_eye_distance == 0:
-        raise ValueError("Left and right eye coordinates are identical.")
-
-    # print(inter_eye_distance)
-
-    # print(inter_eye_distance, " - inter eye distance along the axis of the eyes")
-    # Unit vector along the eye axis
-    eye_axis_unit = eye_axis_vec / inter_eye_distance
-
-    # Vector from left eye to nose
-    left_to_nose = nose_vec - left_eye_vec
-
-    # Scalar projection of nose position onto the eye axis
-    nose_projection = np.dot(left_to_nose, eye_axis_unit)
-
-    # print(nose_projection, " - distance from left eye to nose along the axis of the eyes")
-    # Normalized position along the axis (-0.5 to +0.5 for centered nose)
-    normalized_position = nose_projection / inter_eye_distance
-    # print(normalized_position, " - inter eye distance to nose displacement ratio from left eye")
-
-    # Vector from left eye to nose
-    right_to_nose = nose_vec - right_eye_vec
-
-    # Scalar projection of nose position onto the eye axis
-    nose_projection = np.dot(right_to_nose, eye_axis_unit)
-
-    # print(nose_projection, " - distance from the right eye to the nose along the axis of the eyes")
-    # Normalized position along the axis (-0.5 to +0.5 for centered nose)
-    normalized_position = nose_projection / inter_eye_distance
-    # print(normalized_position, " - inter eye distance to nose displacement ratio from right eye")
-
-    # Asymmetry ratio (optional alternative metric)
-    # Maps normalized_position = 0 → 1.0 (symmetric)
-    # Positive values indicate shift toward right eye
-    denom_left = 0.5 - normalized_position
-    denom_right = 0.5 + normalized_position
-    asymmetry_ratio_yaw = (denom_right / denom_left) if denom_left != 0 else float('inf')
-
-    print(asymmetry_ratio_yaw, " - asymmetry ratio (right/left)")
-    yaw_deg = asymmetry_ratio_yaw * 180
     # print(asymmetry_ratio * 180, " - yaw in degrees (approximate)")
     # print(np.degrees(np.arcsin(asymmetry_ratio)), " - yaw in degrees (approximate)")
 
-    # roll calculation
-
-    planar_vec = np.array([0, 1])  # reference up direction (y-axis)
-    orth_vec = np.array([-eye_axis_unit[1], eye_axis_unit[0]])  # perpendicular to eye axis
-
-    # Normalize both vectors (just to be safe)
-    planar_vec = planar_vec / np.linalg.norm(planar_vec)
-    orth_vec = orth_vec / np.linalg.norm(orth_vec)
-
-    # Compute signed angle using atan2
-    roll_rad = np.arctan2(
-        np.cross(planar_vec, orth_vec),   # sine term (determines sign)
-        np.dot(planar_vec, orth_vec)      # cosine term
-    )
-
-    roll_deg = np.degrees(roll_rad)
+    
     # print(roll_deg, "Head roll (signed)")
 
     # Pitch Calculation
@@ -492,7 +529,7 @@ def GetHeadPose(face_cascade, eye_cascade, mouth_cascade, nose_cascade, img, hei
     print(f"roll: {roll_deg:.2f} ")
     print(f"yaw: {yaw_deg:.2f}")
 
-    # Compose rotation matrix (extrinsic Z-Y-X: yaw -> pitch -> roll)
+     # Compose rotation matrix (extrinsic Z-Y-X: yaw -> pitch -> roll)
     rvec = np.array([np.radians(yaw_deg), np.radians(pitch_deg), np.radians(roll_deg)])
     R, _ = cv2.Rodrigues(rvec)  # Single 3x3 matrix from Rodriguez formula
 
@@ -504,57 +541,33 @@ def GetHeadPose(face_cascade, eye_cascade, mouth_cascade, nose_cascade, img, hei
 
     # Project to 2D and draw (BGR colors: X-red, Y-green, Z-blue)
     nose_pos = (int(features["nose"][0]), int(features["nose"][1]))
+    axis_labels = ['X', 'Y', 'Z']
+    colors = [(0, 0, 255), (0, 255, 0), (255, 0, 0)]  # BGR: red, green, blue
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 0.5
+    thickness = 2
+    offset = 5  # Pixels offset for label placement above the arrow tip
+
     for i in range(3):
         dx, dy, _ = directions[:, i]
         end = (int(nose_pos[0] + dx), int(nose_pos[1] + dy))
-        color = [(0, 0, 255), (0, 255, 0), (255, 0, 0)][i]
+        color = colors[i]
+        
+        # Draw the arrowed line
         cv2.arrowedLine(img2, nose_pos, end, color, 2, tipLength=0.3)
+        
+        # Compute label position (slightly above and beyond the arrow tip)
+        label_x = end[0] + offset
+        label_y = end[1] - offset  # Negative offset for above the tip
+        
+        # Draw label text with subtle background for readability
+        label = axis_labels[i]
+        (text_width, text_height), baseline = cv2.getTextSize(label, font, font_scale, thickness)
+        bg_top_left = (label_x - 2, label_y - text_height - 2)
+        bg_bottom_right = (label_x + text_width + 2, label_y + baseline + 2)
+        # cv2.rectangle(img2, bg_top_left, bg_bottom_right, (255, 255, 255), -1)  # White background
+        cv2.putText(img2, label, (label_x, label_y), font, font_scale, color, thickness, cv2.LINE_AA)
 
-    # Rx = np.array([
-    #     [1, 0, 0], 
-    #     [0, math.cos(math.radians(roll_deg)), -math.sin(math.radians(roll_deg))], 
-    #     [0, math.sin(math.radians(roll_deg)), math.cos(math.radians(roll_deg))]
-    #     ])
-
-    # Ry = np.array([
-    #     [math.cos(math.radians(pitch_deg)), 0, math.sin(math.radians(pitch_deg))],
-    #     [0, 1, 0],
-    #     [-math.sin(math.radians(pitch_deg)), 0, math.cos(math.radians(pitch_deg))]
-    #     ])
-
-    # Rz = np.array([
-    #     [math.cos(math.radians(yaw_deg)), -math.sin(math.radians(yaw_deg)), 0],
-    #     [math.sin(math.radians(yaw_deg)), math.cos(math.radians(yaw_deg)), 0],
-    #     [0, 0, 1]
-    #     ])
-
-    # R = Rz @ Ry @ Rx
-
-    # arrow_length = 50
-
-    # # Define unit vectors in the local frame
-    # axes = np.array([
-    #     [1, 0, 0],
-    #     [0, 1, 0],
-    #     [0, 0, 1]], 
-    #     dtype=np.float32)  # X, Y, Z
-
-    # # Transform and scale axes
-    # directions = (R @ axes.T).T  # Shape: (3, 3)
-    # directions = directions / np.linalg.norm(directions, axis=1)[:, np.newaxis]  # Normalize
-    # directions *= arrow_length  # Scale to desired length
-
-    # # Convert to pixel endpoints
-    # endpoints = np.round(directions[:, :2]).astype(int)  # Only x, y components
-    # colors = [(0, 0, 255), (0, 255, 0), (255, 0, 0)]  # BGR: Red, Green, Blue
-
-    # thickness = 5
-
-    # for i, (dx, dy) in enumerate(endpoints):
-    #     end_x = features["nose"][0] + dx
-    #     end_y = features["nose"][1] + dy
-    #     color = colors[i]
-    #     cv2.arrowedLine(img2, (features["nose"][0], features["nose"][1]), (end_x, end_y), color, thickness, tipLength=0.3)
 
     font = cv2.FONT_HERSHEY_SIMPLEX
     font_scale = 1

@@ -481,8 +481,28 @@ def GetHeadPose(face_cascade, eye_cascade, mouth_cascade, nose_cascade, img, hei
     print(f"roll: {roll_deg:.2f} ")
     print(f"yaw: {yaw_deg:.2f}")
 
+    # # Compose rotation matrix (extrinsic Z-Y-X: yaw -> pitch -> roll)
+    # rvec = np.array([np.radians(yaw_deg), np.radians(pitch_deg), np.radians(roll_deg)])
+    # R, _ = cv2.Rodrigues(rvec)  # Single 3x3 matrix from Rodriguez formula
+
+    # # Unit axes in local frame (X forward, Y down, Z right for head pose convention)
+    # axes = np.float32([[1, 0, 0], [0, 1, 0], [0, 0, 1]]).T
+    # directions = R @ axes
+    # directions /= np.linalg.norm(directions, axis=0)  # Normalize
+    # directions *= 50  # Arrow length
+
+    # # Project to 2D and draw (BGR colors: X-red, Y-green, Z-blue)
+    # nose_pos = (int(features["nose"][0]), int(features["nose"][1]))
+    # for i in range(3):
+    #     dx, dy, _ = directions[:, i]
+    #     end = (int(nose_pos[0] + dx), int(nose_pos[1] + dy))
+    #     color = [(0, 0, 255), (0, 255, 0), (255, 0, 0)][i]
+    #     cv2.arrowedLine(img2, nose_pos, end, color, 2, tipLength=0.3)
     # Compose rotation matrix (extrinsic Z-Y-X: yaw -> pitch -> roll)
-    rvec = np.array([np.radians(yaw_deg), np.radians(pitch_deg), np.radians(roll_deg)])
+    # rvec = np.array([np.radians(yaw_deg), np.radians(pitch_deg), np.radians(roll_deg)])
+    rvec = np.array([ np.radians(pitch_deg), np.radians(roll_deg), np.radians(yaw_deg)])
+    # rvec = np.array([np.radians(roll_deg), np.radians(yaw_deg), np.radians(pitch_deg)])
+
     R, _ = cv2.Rodrigues(rvec)  # Single 3x3 matrix from Rodriguez formula
 
     # Unit axes in local frame (X forward, Y down, Z right for head pose convention)
@@ -493,11 +513,32 @@ def GetHeadPose(face_cascade, eye_cascade, mouth_cascade, nose_cascade, img, hei
 
     # Project to 2D and draw (BGR colors: X-red, Y-green, Z-blue)
     nose_pos = (int(features["nose"][0]), int(features["nose"][1]))
+    axis_labels = ['X', 'Y', 'Z']
+    colors = [(0, 0, 255), (0, 255, 0), (255, 0, 0)]  # BGR: red, green, blue
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 0.5
+    thickness = 2
+    offset = 5  # Pixels offset for label placement above the arrow tip
+
     for i in range(3):
         dx, dy, _ = directions[:, i]
         end = (int(nose_pos[0] + dx), int(nose_pos[1] + dy))
-        color = [(0, 0, 255), (0, 255, 0), (255, 0, 0)][i]
+        color = colors[i]
+        
+        # Draw the arrowed line
         cv2.arrowedLine(img2, nose_pos, end, color, 2, tipLength=0.3)
+        
+        # Compute label position (slightly above and beyond the arrow tip)
+        label_x = end[0] + offset
+        label_y = end[1] - offset  # Negative offset for above the tip
+        
+        # Draw label text with subtle background for readability
+        label = axis_labels[i]
+        (text_width, text_height), baseline = cv2.getTextSize(label, font, font_scale, thickness)
+        bg_top_left = (label_x - 2, label_y - text_height - 2)
+        bg_bottom_right = (label_x + text_width + 2, label_y + baseline + 2)
+        # cv2.rectangle(img2, bg_top_left, bg_bottom_right, (255, 255, 255), -1)  # White background
+        cv2.putText(img2, label, (label_x, label_y), font, font_scale, color, thickness, cv2.LINE_AA)
 
     # Rx = np.array([
     #     [1, 0, 0], 
@@ -632,7 +673,7 @@ if __name__ == "__main__":
     # left_ear_cascade   = load_cascade('haarcascade_mcs_leftear.xml')
     # right_ear_cascade  = load_cascade('haarcascade_mcs_rightear.xml')
 
-    head = heads["jestin_5_rgb.png"]
+    head = heads["jestin_7_rgb.png"]
     # print(head.keys())
 
     GetHeadPose(face_cascade, eye_cascade, mouth_cascade, nose_cascade, head["im_rgb"], head["im_height"])
