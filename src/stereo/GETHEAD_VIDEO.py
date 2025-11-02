@@ -41,6 +41,8 @@ def GetHeadPose(face_cascade, eye_cascade, mouth_cascade, nose_cascade, img, hei
 
     if len(faces) == 0:
         print("No faces detected")
+
+        return img2
         # return
 
     arr = height_m.copy().astype(float)
@@ -148,31 +150,38 @@ def GetHeadPose(face_cascade, eye_cascade, mouth_cascade, nose_cascade, img, hei
                 cv2.circle(img2, center, 5, (0, 0, 255), 2)
                 print("Right eye detected at:", center)
 
-    if abs(features['eye_left'][1] - features["eye_right"][1]) < (h/2 - h/3):
-        print("EYES valid\n")
+    try:
+        if abs(features['eye_left'][1] - features["eye_right"][1]) < (h/2 - h/3):
+            print("EYES valid\n")
 
-        left_eye_vec = np.array(features["eye_left"])[:2]
-        right_eye_vec = np.array(features["eye_right"])[:2]
+            left_eye_vec = np.array(features["eye_left"])[:2]
+            right_eye_vec = np.array(features["eye_right"])[:2]
 
-        eye_axis_vec = right_eye_vec - left_eye_vec
+            eye_axis_vec = right_eye_vec - left_eye_vec
 
-        perp_eye_axis_vec = np.array([-eye_axis_vec[1], eye_axis_vec[0]])
+            perp_eye_axis_vec = np.array([-eye_axis_vec[1], eye_axis_vec[0]])
+     
+            print((left_eye_vec[0] + right_eye_vec[0]) // 2, (left_eye_vec[1] + right_eye_vec[1]) // 2)       
+            features["eye_midpoint"] = [(left_eye_vec[0] + right_eye_vec[0]) // 2, (left_eye_vec[1] + right_eye_vec[1]) // 2, height_m[int((left_eye_vec[1] + right_eye_vec[1]) // 2), int((left_eye_vec[0] + right_eye_vec[0]) // 2)]]
+   
 
-        features["eye_midpoint"] = [(left_eye_vec[0] + right_eye_vec[0]) // 2, (left_eye_vec[1] + right_eye_vec[1]) // 2, height_m[int((left_eye_vec[0] + right_eye_vec[0]) // 2), int((left_eye_vec[1] + right_eye_vec[1]) // 2)]]
-        # features["eye_midpoint"] = np.array([int((left_eye_vec[0] + right_eye_vec[0]) // 2), int((left_eye_vec[1] + right_eye_vec[1]) // 2), height_m[int((left_eye_vec[0] + right_eye_vec[0]) // 2), int((left_eye_vec[1] + right_eye_vec[1]) // 2)]])
+            # features["eye_midpoint"] = np.array([int((left_eye_vec[0] + right_eye_vec[0]) // 2), int((left_eye_vec[1] + right_eye_vec[1]) // 2), height_m[int((left_eye_vec[0] + right_eye_vec[0]) // 2), int((left_eye_vec[1] + right_eye_vec[1]) // 2)]])
 
 
-        planar_vec = np.array([0, 1])  # reference up direction (y-axis)
+            planar_vec = np.array([0, 1])  # reference up direction (y-axis)
 
 
-        theta = np.arctan2(
-            np.cross(planar_vec, perp_eye_axis_vec),   # sine term (determines sign)
-            np.dot(planar_vec, perp_eye_axis_vec)      # cosine term
-        )
+            theta = np.arctan2(
+                np.cross(planar_vec, perp_eye_axis_vec),   # sine term (determines sign)
+                np.dot(planar_vec, perp_eye_axis_vec)      # cosine term
+            )
 
-    else:
-        print("EYES not valid\n")
-
+        else:
+            print("EYES not valid\n")
+            return img2
+    except KeyError:
+        print("didn't find two eyes")
+        return img2
     # Finding face
     for (nx, ny, nw, nh) in nose:
 
@@ -230,6 +239,7 @@ def GetHeadPose(face_cascade, eye_cascade, mouth_cascade, nose_cascade, img, hei
         print(features["nose"],"\n")
     except KeyError:
         print("No nose found\n")
+        return img2
 
 
     # Finding Mouth
@@ -316,7 +326,7 @@ def GetHeadPose(face_cascade, eye_cascade, mouth_cascade, nose_cascade, img, hei
 
         features["right_mouth"] = right_mouth
         features["left_mouth"] = left_mouth
-        features["mid_mouth"] = np.array([int((right_mouth[0] + left_mouth[0])//2), int((right_mouth[1] + left_mouth[1])//2), height_m[int((right_mouth[0] + left_mouth[0])//2), int((right_mouth[1] + left_mouth[1])//2)]])
+        features["mid_mouth"] = np.array([int((right_mouth[0] + left_mouth[0])//2), int((right_mouth[1] + left_mouth[1])//2), height_m[int((right_mouth[1] + left_mouth[1])//2), int((right_mouth[0] + left_mouth[0])//2)]])
         # plt.imshow(mouth_region_binary_dilate, cmap="gray")
         # plt.imshow(mouth_region_gray_adjusted, cmap ="gray")
         # plt.imshow(thresh_im1, cmap="gray")
@@ -338,6 +348,7 @@ def GetHeadPose(face_cascade, eye_cascade, mouth_cascade, nose_cascade, img, hei
         # plt.imshow(img2)
     except KeyError:
         print("no valid mouth\n")
+        return img2
 
     
     # Drawing lines
@@ -555,84 +566,102 @@ def GetHeadPose(face_cascade, eye_cascade, mouth_cascade, nose_cascade, img, hei
     cv2.putText(img2, text_yaw, (5, 30+30), font, font_scale, (255, 255, 255), thickness+1)
     cv2.putText(img2, text_roll, (5, 30+60), font, font_scale, (255, 255, 255), thickness+1)
 
-    # Display the annotated image and keep the window open until a key is pressed
-    cv2.imshow("head", cv2.cvtColor(img2, cv2.COLOR_RGB2BGR))  # 'img2' is your annotated image (ensure it is in BGR format for display)
-    cv2.waitKey(0)  # Blocks until any key is pressed; use 0 for indefinite wait
-    cv2.destroyAllWindows()  # Cleanly close the window after key press
+    # # Display the annotated image and keep the window open until a key is pressed
+    # cv2.imshow("head", cv2.cvtColor(img2, cv2.COLOR_RGB2BGR))  # 'img2' is your annotated image (ensure it is in BGR format for display)
+    # cv2.waitKey(0)  # Blocks until any key is pressed; use 0 for indefinite wait
+    # cv2.destroyAllWindows()  # Cleanly close the window after key press
+    return img2
 
 if __name__ == "__main__":
-    heads = {}
-    i = 0
 
     # folder_path = "AFLW2000-3D/AFLW2000/"
     folder_path = os.getcwd()
-    png_files = glob.glob(os.path.join(folder_path, "*.png"))
+    # png_files = glob.glob(os.path.join(folder_path, "*.png"))
 
-    # Retrieve .jpg files
-    jpg_files = glob.glob(os.path.join(folder_path, "*.jpg"))
-
-    # Combine both lists
-    jpg_files = png_files + jpg_files  # Note: Renaming to jpg_files as per your original variable, but consider a more descriptive name like all_image_files
-
-    print(f"Found {len(jpg_files)} .png files in {folder_path}")
-
-    for image_path in jpg_files:
-        image_name = os.path.basename(image_path)
-
-        pickle_name = image_name[0:-7] + "height.pkl"
-        
-        try:
-            with open(pickle_name, 'rb') as file:
-                loaded_data = pickle.load(file)
-            # print("Loaded data:", loaded_data)
-            # print(loaded_data["height_m"].shape)
-            # print(type(loaded_data["height_m"]))
-        except FileNotFoundError:
-            print(f"Error: The file {pickle_name} was not found.")
-            continue
-        except pickle.PicklingError:
-            print("Error: Failed to load the pickle file.")
-            continue
-
-        image = cv2.imread(os.path.join(folder_path, image_name))
-        # print("Image:", image_name, "Shape:", image.shape)
-        
-        sobel_x = cv2.Sobel(cv2.cvtColor(image, cv2.COLOR_RGB2GRAY), cv2.CV_64F, 1, 0, ksize=3) # Horizontal
-        sobel_y =  cv2.Sobel(cv2.cvtColor(image, cv2.COLOR_RGB2GRAY), cv2.CV_64F, 0, 1, ksize=3) # Vertical
-        
-        heads[image_name] = {
-            "im_rgb": cv2.cvtColor(image, cv2.COLOR_RGB2BGR),
-            "im_bgr": image,
-            "im_gray": cv2.cvtColor(image, cv2.COLOR_RGB2GRAY),
-            "im_height": loaded_data["height_m"],
-            "im_gray_gaussian": cv2.GaussianBlur(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY), (5, 5), 0),
-            "im_sobel_x": sobel_x,  # Horizontal
-            "im_sobel_y": sobel_y,  # Vertical
-            "im_sobel_mag": cv2.normalize(np.sqrt(sobel_x**2 + sobel_y**2), None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
-        }
-        
-        # output_path = f"{image_name[0:-4]}_head_pose.jpg"  # Save annotated image for each
-        print(f"\nProcessing {image_name}...")
-        # result = GetHeadPose(image_path, output_path)
-        # print("Head Pose Euler Angles:", result['angles'])
-        # print("Rotation Matrix (Camera to Head Frame):\n", result['camera_to_head_rotation'])
-        i = i + 1
-        if i >= 70:
-            break
-
-
-        # ------------------------------------------------------------------
-    # 3. Load every classifier
+    pickle_name = "jestin_video_1.pkl"
+    try:
+        with open(pickle_name, 'rb') as file:
+            data = pickle.load(file)
+        # print("Loaded data:", loaded_data)
+        # print(loaded_data["height_m"].shape)
+        # print(type(loaded_data["height_m"]))
+    except FileNotFoundError:
+        print(f"Error: The file {pickle_name} was not found.")
+        # continue
+    except pickle.PicklingError:
+        print("Error: Failed to load the pickle file.")
+        # continue
+    # ------------------------------------------------------------------
+    # Load every classifier
     # ------------------------------------------------------------------
     face_cascade       = load_cascade('haarcascade_frontalface_default.xml')
     eye_cascade        = load_cascade('haarcascade_eye.xml')
     mouth_cascade      = load_cascade('haarcascade_mcs_mouth.xml')
     nose_cascade       = load_cascade('haarcascade_mcs_nose.xml')
-    # profileface_cascade= load_cascade('haarcascade_profileface.xml')
-    # left_ear_cascade   = load_cascade('haarcascade_mcs_leftear.xml')
-    # right_ear_cascade  = load_cascade('haarcascade_mcs_rightear.xml')
 
-    head = heads["jestin_5_rgb.png"]
-    # print(head.keys())
 
-    GetHeadPose(face_cascade, eye_cascade, mouth_cascade, nose_cascade, head["im_rgb"], head["im_height"])
+    rgb_frames = data['rgb_frames']       # List of BGR uint8 arrays (480x848x3)
+    height_frames = data['height_frames'] # List of float32 arrays (480x640) in meters; NaN for invalid
+
+    # Optional: Retrieve metadata if needed
+    plane_point = data.get('plane_point')
+    plane_normal = data.get('plane_normal')
+    units = data.get('units', 'meters')
+    height_map_shape = data.get('height_map_shape', (480, 640))
+
+    print(f"Loaded {len(rgb_frames)} frames from '{pickle_name}'.")
+    if len(rgb_frames) != len(height_frames):
+        raise ValueError("Mismatch between RGB and height frame counts.")
+    print(f"Height maps: {height_map_shape[0]}x{height_map_shape[1]} resolution, in {units} (signed distance; NaN for invalid).")
+
+    # Playback parameters
+    fps = 30  # Target frames per second (match capture rate)
+    delay_ms = int(1000 / fps)  # Delay between frames in milliseconds
+
+    # Playback loop
+    print("Starting playback. Press 'q' to quit, 'p' to pause/resume.")
+    paused = False
+    frame_idx = 0
+
+    while frame_idx < len(rgb_frames):
+        if not paused:
+            rgb = rgb_frames[frame_idx]
+            height = height_frames[frame_idx]
+
+            image = GetHeadPose(face_cascade, eye_cascade, mouth_cascade, nose_cascade, rgb, height)
+            cv2.imshow("head pose", image)   
+            
+            # cv2.putText(rgb_display, stats_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+            
+            # # Display windows (side-by-side if desired; here stacked for single window)
+            # combined = np.hstack((rgb_display, height_colormap)) if resize_factor == 1.0 else np.hstack((rgb_display, height_colormap))
+            # cv2.imshow('RGB (Left) | Height Map (Right) - JET Colormap', combined)
+            
+            frame_idx += 1
+            if frame_idx >= len(rgb_frames):
+                print("Playback complete.")
+                break
+        
+        # Handle key presses
+        key = cv2.waitKey(delay_ms if not paused else 0) & 0xFF
+        if key == ord('q'):
+            print("Playback quit by user.")
+            break
+        elif key == ord('p'):
+            paused = not paused
+            print("Paused" if paused else "Resumed")
+        elif key == ord('r'):  # Rewind to start
+            frame_idx = 0
+            print("Rewound to start.")
+        
+        # Manual frame navigation when paused
+        if paused:
+            if key == ord('n'):  # Next frame
+                frame_idx = min(frame_idx + 1, len(rgb_frames) - 1)
+            elif key == ord('b'):  # Previous frame
+                frame_idx = max(frame_idx - 1, 0)
+
+    cv2.destroyAllWindows()
+    print("Playback window closed.")
+
+    # GetHeadPose(face_cascade, eye_cascade, mouth_cascade, nose_cascade, head["im_rgb"], head["im_height"])
