@@ -9,7 +9,7 @@ import cv2
 from typing import List
 
 # ---- Config & globals (same shape as notebook) ----
-USE_YOLO = False   # Set True if you have `pip install ultralytics` and weights available
+USE_YOLO = True   # Set True if you have `pip install ultralytics` and weights available
 detector_name = "HOG"
 yolo_model = None
 
@@ -51,7 +51,7 @@ def detect_people_yolo(frame) -> List[List[float]]:
     Returns list of [x, y, w, h, score] using YOLOv8 (Ultralytics).
     Filters to class 0 (person). Uses model defaults (no extra NMS/filters here).
     """
-    results = yolo_model(frame, conf=0.60, iou=0.7, classes=[0], verbose=False) 
+    results = yolo_model(frame, conf=0.60, iou=0.3, classes=[0], verbose=False) 
     out: List[List[float]] = []
     for r in results:
         if r.boxes is None:
