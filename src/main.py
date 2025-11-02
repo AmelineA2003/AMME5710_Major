@@ -34,6 +34,7 @@ pd.RULES_PROCESS_EVERY_N = 1
 # Paths
 # VIDEO_PATH = "../data/MOTS/train/MOTS20-02/MOTS20-02.mp4"
 VIDEO_PATH = "../data/MOTS/train/MOTS20-09/MOTS20-09.mp4"
+# VIDEO_PATH = "../data/collected/test_rgb_1760411494.mp4"
 OUTPUT_DIR = "outputs"
 FINAL_OUT   = os.path.join(OUTPUT_DIR, "labeled.mp4")
 

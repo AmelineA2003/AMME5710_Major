@@ -1,10 +1,18 @@
 # person_detect.py
-# RULES (non-ML) detector with rich debug artefacts, now resolution-invariant.
-# HOG and YOLO back-ends are preserved. Public APIs:
+# RULES (non-ML) detector with rich debug artefacts, resolution-invariant tuning,
+# and selectable background models. ACCUM mode includes blur+EMA+tiny-CC pruning.
+# HOG and YOLO back-ends are preserved.
+#
+# Public APIs:
 #   - detect_people(frame, frame_idx=0) -> [[x,y,w,h,score], ...]
 #   - detect_people_debug(frame, frame_idx=0) -> (final, debug_dict)
+#
+# Debug dictionary (RULES):
+#   boxes: 'contours','filtered','edges_ok','nms','shaped','final'
+#   images: 'img_bg','img_mask','img_diff','img_edge'
 
 from typing import List, Tuple, Dict, Optional
+from collections import deque
 import cv2
 import numpy as np
 
@@ -13,7 +21,7 @@ import numpy as np
 # -----------------------------
 DETECTOR_MODE = "RULES"     # "RULES" | "HOG" | "YOLO"
 
-USE_YOLO = False            # used only if DETECTOR_MODE == "YOLO"
+USE_YOLO = False            # only if DETECTOR_MODE == "YOLO"
 detector_name = "RULES"
 yolo_model = None
 
@@ -28,7 +36,7 @@ HOG_SCALE = 1.03
 HOG_MERGE = True
 HOG_NMS_IOU = 0.50
 HOG_SCORE_THRESH = 0.20
-HOG_USE_WBF = False  # we keep a simple WBF stub below; NMS is default/faster
+HOG_USE_WBF = False  # simple WBF stub below; NMS is default/faster
 
 # Full-body shaping (shared)
 FULLBODY_TARGET_AR = 0.45
@@ -37,31 +45,54 @@ FULLBODY_EXPAND = 0.12
 # -----------------------------
 # RULES detector knobs (resolution-invariant)
 # -----------------------------
-# Background subtraction (MOG2 — adaptive/unsupervised)
+# Background mode: "ACCUM" (running avg), "MEDIAN" (rolling median),
+# "DIFF" (t-k frame differencing), or "MOG2" (OpenCV GMM)
+RULES_BG_MODE = "MOG2"
+
+# MOG2 params (used only if RULES_BG_MODE == "MOG2")
 RULES_BG_HISTORY = 300
-RULES_BG_VARTHRESH = 16
+RULES_BG_VARTHRESH = 14
 RULES_BG_SHADOWS = True
-RULES_MOTION_BIN_THRESH = 127          # threshold on MOG2 mask to binarize (0..255)
-RULES_MOTION_MIN_OVERLAP = 0.12        # fraction of box area that must be foreground
+RULES_MOTION_BIN_THRESH = 165          # threshold on MOG2/other masks to binarize (0..255)
+
+# ACCUM (running average) params — baseline for stop-and-go mall scene
+RULES_ACCUM_ALPHA   = 0.010            # slowish learning; paused people don’t vanish
+RULES_ACCUM_THRESH  = 32               # raise to cut flicker (26–32 typical)
+
+# MEDIAN (rolling temporal median) params
+RULES_MEDIAN_WINDOW = 21               # (unused in ACCUM)
+RULES_MEDIAN_THRESH = 20
+
+# DIFF (frame differencing) params
+RULES_DIFF_STRIDE   = 5                # (unused in ACCUM)
+RULES_DIFF_THRESH   = 24
+
+# Motion overlap fraction (0..1) required inside a candidate box
+RULES_MOTION_MIN_OVERLAP = 0.11        # allow brief pauses
 
 # RESOLUTION-INVARIANT geometry/morph settings
-RULES_MIN_AREA_FRAC = 0.015           # min blob area as a fraction of frame area (e.g., 0.15%)
-RULES_ASPECT_MIN = 0.30
-RULES_ASPECT_MAX = 0.80
+RULES_MIN_AREA_FRAC = 0.009            # ~0.9% of frame; lower for tiny/far people
+RULES_ASPECT_MIN = 0.35
+RULES_ASPECT_MAX = 0.75
 
 # Morphology kernel sizes as a fraction of the *short* side
-RULES_MORPH_OPEN_FRAC  = 0.006         # e.g., 0.6% of min(H,W)
-RULES_MORPH_CLOSE_FRAC = 0.010         # e.g., 1.0% of min(H,W)
+RULES_MORPH_OPEN_FRAC  = 0.01         # denoise salt-and-pepper
+RULES_MORPH_CLOSE_FRAC = 0.03         # fill holes in bodies
 
-# Edge-density scoring (kept absolute; gradients are already scale-normalized)
-RULES_EDGE_MAG_THRESH = 25             # Sobel mag threshold (0..255) for "edge pixels"
-RULES_EDGE_MIN_FRAC   = 0.05           # min fraction of edge pixels in the crop
+# Edge-density scoring
+RULES_EDGE_MAG_THRESH = 28             # require stronger edges
+RULES_EDGE_MIN_FRAC   = 0.06           # a bit more edge content
 
 # NMS
-RULES_NMS_IOU = 0.50
+RULES_NMS_IOU = 0.30
 
 # Process throttling (1 = every frame)
 RULES_PROCESS_EVERY_N = 1
+
+# ---- Minimal stabilisers between diff -> mask ----
+RULES_DIFF_BLUR_K = 12                 # Gaussian blur before threshold
+RULES_MASK_TEMPORAL_ALPHA = 0.23       # EMA to dampen mask flicker (0.15–0.25 good)
+RULES_MIN_CC_AREA_FRAC = 0.0007        # prune tiny components (~0.06% of frame)
 
 # -----------------------------
 # Init per-backend resources
@@ -84,14 +115,22 @@ if DETECTOR_MODE == "HOG":
     hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
     detector_name = "HOG"
 
-# RULES init: background subtractor (MOG2)
+# RULES init: MOG2 only if chosen
 _bg = None
-if DETECTOR_MODE == "RULES":
+if DETECTOR_MODE == "RULES" and RULES_BG_MODE == "MOG2":
     _bg = cv2.createBackgroundSubtractorMOG2(
         history=RULES_BG_HISTORY, varThreshold=RULES_BG_VARTHRESH,
         detectShadows=RULES_BG_SHADOWS
     )
     detector_name = "RULES"
+
+# ML-free background buffers
+_bg_accum_f32: Optional[np.ndarray] = None      # for ACCUM
+_bg_median_buf: deque = deque(maxlen=0)         # for MEDIAN
+_prev_gray_buf: deque = deque(maxlen=0)         # for DIFF
+
+# Temporal EMA for mask
+_mask_ema: Optional[np.ndarray] = None
 
 # -----------------------------
 # Utils
@@ -165,7 +204,7 @@ def _shape_fullbody(dets, target_ar=0.45, expand=0.12):
         shaped.append([x2, y2, w2, h2, s])
     return shaped
 
-# --- NEW: resolution-aware derivation helpers ---
+# Resolution-aware derivation helpers
 def _round_odd(n: float) -> int:
     n = max(1, int(round(n)))
     return n if n % 2 == 1 else n + 1
@@ -189,6 +228,112 @@ def _derive_rules_params(H: int, W: int):
         "K_OPEN":  k_open,
         "K_CLOSE": k_close,
     }
+
+# -----------------------------
+# ML-free background helpers
+# -----------------------------
+def _init_bg_buffers(H: int, W: int):
+    """Ensure buffers have correct shapes/capacity for current resolution."""
+    global _bg_accum_f32, _bg_median_buf, _prev_gray_buf
+    if RULES_BG_MODE == "ACCUM":
+        if _bg_accum_f32 is None or _bg_accum_f32.shape != (H, W):
+            _bg_accum_f32 = None  # lazy init next call
+    elif RULES_BG_MODE == "MEDIAN":
+        if len(_bg_median_buf) == 0 or _bg_median_buf.maxlen != RULES_MEDIAN_WINDOW:
+            _bg_median_buf = deque(maxlen=RULES_MEDIAN_WINDOW)
+    elif RULES_BG_MODE == "DIFF":
+        if len(_prev_gray_buf) == 0 or _prev_gray_buf.maxlen != (RULES_DIFF_STRIDE + 1):
+            _prev_gray_buf = deque(maxlen=RULES_DIFF_STRIDE + 1)
+
+def _apply_diff_blur_and_threshold(diff_u8: np.ndarray) -> np.ndarray:
+    """Minimal stabilisation from abs-diff to binary mask (0/1)."""
+    d = diff_u8
+    # 1) Optional pre-threshold blur
+    if RULES_DIFF_BLUR_K and RULES_DIFF_BLUR_K >= 3:
+        k = int(RULES_DIFF_BLUR_K) | 1  # ensure odd
+        d = cv2.GaussianBlur(d, (k, k), 0)
+
+    # 2) Fixed threshold (ACCUM/MEDIAN/DIFF use their *_THRESH)
+    if RULES_BG_MODE == "ACCUM":
+        thr = int(RULES_ACCUM_THRESH)
+    elif RULES_BG_MODE == "MEDIAN":
+        thr = int(RULES_MEDIAN_THRESH)
+    elif RULES_BG_MODE == "DIFF":
+        thr = int(RULES_DIFF_THRESH)
+    else:  # MOG2 shouldn't use this, but safe default
+        thr = int(RULES_MOTION_BIN_THRESH)
+
+    _, m = cv2.threshold(d, thr, 255, cv2.THRESH_BINARY)
+    m = (m > 0).astype(np.uint8)  # {0,1}
+
+    # 3) Optional temporal EMA smoothing on the binary mask
+    global _mask_ema
+    if RULES_MASK_TEMPORAL_ALPHA > 0.0:
+        f = float(RULES_MASK_TEMPORAL_ALPHA)
+        if _mask_ema is None or _mask_ema.shape != m.shape:
+            _mask_ema = m.astype(np.float32) * 255.0
+        else:
+            _mask_ema = (1.0 - f) * _mask_ema + f * (m.astype(np.float32) * 255.0)
+        m = (_mask_ema >= 127.0).astype(np.uint8)
+
+    return m  # {0,1}
+
+def _bg_and_mask(frame: np.ndarray) -> Tuple[Optional[np.ndarray], np.ndarray, np.ndarray]:
+    """
+    Returns (bg_bgr, mask_bin, absdiff_u8) for selected RULES_BG_MODE.
+    bg_bgr may be None in very early frames.
+    """
+    H, W = frame.shape[:2]
+    _init_bg_buffers(H, W)
+
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+    if RULES_BG_MODE == "ACCUM":
+        global _bg_accum_f32
+        if _bg_accum_f32 is None:
+            _bg_accum_f32 = gray.astype(np.float32)
+            bg_u8 = gray.copy()
+            diff  = np.zeros_like(gray)
+            mask  = np.zeros_like(gray, dtype=np.uint8)
+        else:
+            cv2.accumulateWeighted(gray, _bg_accum_f32, RULES_ACCUM_ALPHA)
+            bg_u8 = cv2.convertScaleAbs(_bg_accum_f32)
+            diff  = cv2.absdiff(gray, bg_u8)
+            mask  = _apply_diff_blur_and_threshold(diff)
+        bg_bgr = cv2.cvtColor(bg_u8, cv2.COLOR_GRAY2BGR)
+        return bg_bgr, mask, diff
+
+    elif RULES_BG_MODE == "MEDIAN":
+        _bg_median_buf.append(gray.copy())
+        if len(_bg_median_buf) < _bg_median_buf.maxlen:
+            return None, np.zeros_like(gray, dtype=np.uint8), np.zeros_like(gray)
+        stack = np.stack(list(_bg_median_buf), axis=0)  # T x H x W
+        bg_u8 = np.median(stack, axis=0).astype(np.uint8)
+        diff  = cv2.absdiff(gray, bg_u8)
+        mask  = _apply_diff_blur_and_threshold(diff)
+        bg_bgr = cv2.cvtColor(bg_u8, cv2.COLOR_GRAY2BGR)
+        return bg_bgr, mask, diff
+
+    elif RULES_BG_MODE == "DIFF":
+        _prev_gray_buf.append(gray.copy())
+        if len(_prev_gray_buf) <= RULES_DIFF_STRIDE:
+            return None, np.zeros_like(gray, dtype=np.uint8), np.zeros_like(gray)
+        bg_u8 = _prev_gray_buf[0]  # t-k
+        diff  = cv2.absdiff(gray, bg_u8)
+        mask  = _apply_diff_blur_and_threshold(diff)
+        bg_bgr = cv2.cvtColor(bg_u8, cv2.COLOR_GRAY2BGR)
+        return bg_bgr, mask, diff
+
+    else:  # "MOG2"
+        m_raw = _bg.apply(frame)  # 0..255 (shadows ~127)
+        mask  = (m_raw > RULES_MOTION_BIN_THRESH).astype(np.uint8)  # {0,1}
+        bg    = _get_mog2_background()
+        if bg is None:
+            diff = np.zeros((H, W), np.uint8)
+        else:
+            diff = cv2.absdiff(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY),
+                               cv2.cvtColor(bg,   cv2.COLOR_BGR2GRAY))
+        return bg, mask, diff
 
 # OPTIONAL: WBF-like merge (HOG path)
 def _wbf_merge(dets: List[List[float]], score_thresh: float, iou: float) -> List[List[float]]:
@@ -235,28 +380,26 @@ def detect_people_rules(frame: np.ndarray, frame_idx: int = 0) -> Tuple[List[Lis
     K_OPEN  = d["K_OPEN"]
     K_CLOSE = d["K_CLOSE"]
 
-    # 0) Background snapshot BEFORE update (may be None early on)
-    bg_img = _get_mog2_background() if _bg is not None else None
+    # 0–1) Background + mask + abs-diff (mode-dependent)
+    bg_img, mask, diff_u8 = _bg_and_mask(frame)
 
-    # 1) Motion mask (MOG2 apply updates the model)
-    m_raw = _bg.apply(frame)  # 0..255 (shadows ~127)
-    mask = (m_raw > RULES_MOTION_BIN_THRESH).astype(np.uint8)
+    # 1a) Optional pre-contour tiny-component pruning (resolution-invariant)
+    min_cc_area = max(1, int(round(RULES_MIN_CC_AREA_FRAC * H * W)))
+    if min_cc_area > 1:
+        num, labels, stats, _ = cv2.connectedComponentsWithStats(mask.astype(np.uint8), 8)
+        keep = np.zeros_like(mask, dtype=np.uint8)
+        for i in range(1, num):  # skip background 0
+            if stats[i, cv2.CC_STAT_AREA] >= min_cc_area:
+                keep[labels == i] = 1
+        mask = keep
 
-    # morphology with resolution-aware kernels
+    # 1b) Morphology with resolution-aware kernels
     if K_OPEN > 1:
         k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (K_OPEN, K_OPEN))
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, k, iterations=1)
     if K_CLOSE > 1:
         k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (K_CLOSE, K_CLOSE))
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, k, iterations=1)
-
-    # 1b) Abs difference to background (for viz)
-    if bg_img is None:
-        diff_u8 = np.zeros((H, W), np.uint8)
-    else:
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        bg_gray = cv2.cvtColor(bg_img, cv2.COLOR_BGR2GRAY)
-        diff_u8 = cv2.absdiff(gray, bg_gray)
 
     # 2) Contours -> candidate boxes (geometric gates)
     cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -272,14 +415,14 @@ def detect_people_rules(frame: np.ndarray, frame_idx: int = 0) -> Tuple[List[Lis
         raw.append([x, y, w, h, 1.0])
     debug["contours"] = raw
 
-    # 3) Motion-overlap gate (ensure boxes are foreground *now*)
-    fg_bin = (m_raw > RULES_MOTION_BIN_THRESH).astype(np.uint8)
+    # 3) Motion-overlap gate (ensure boxes are foreground now)
+    fg_bin = (mask > 0).astype(np.uint8)   # {0,1}
     filt = []
     for x, y, w, h, s in raw:
         roi = fg_bin[y:y+h, x:x+w]
         if roi.size == 0:
             continue
-        frac = float(roi.mean())
+        frac = float(roi.mean())           # mean on {0,1}
         if frac >= RULES_MOTION_MIN_OVERLAP:
             filt.append([x, y, w, h, s])
     debug["filtered"] = filt
@@ -305,7 +448,7 @@ def detect_people_rules(frame: np.ndarray, frame_idx: int = 0) -> Tuple[List[Lis
     debug["shaped"] = shaped
 
     # Attach visual artefacts
-    debug["img_mask"] = mask            # uint8 0/1
+    debug["img_mask"] = mask            # {0,1} uint8
     debug["img_bg"]   = bg_img          # BGR or None
     debug["img_diff"] = diff_u8         # uint8 0..255
     debug["img_edge"] = edge_u8         # uint8 0..255
