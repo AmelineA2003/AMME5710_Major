@@ -6,7 +6,7 @@ import cv2
 from person_track import TrackerReID
 from person_detect import detect_people  
 
-from traditional_gaze_functions import traditional_gaze_tracker
+from gaze_tracking.traditional_gaze_functions import traditional_gaze_tracker
 
 # If you want to force HOG/YOLO at runtime, you can uncomment below:
 import person_detect as pd 
