@@ -6,13 +6,15 @@ import cv2
 from person_track import TrackerReID
 from person_detect import detect_people  
 
+from gaze_tracking.traditional_gaze_functions import traditional_gaze_tracker
+
 # If you want to force HOG/YOLO at runtime, you can uncomment below:
 import person_detect as pd 
 
 # ---------------- configuration ----------------
 # VIDEO_PATH = "../data/MOTS/train/MOTS20-02/MOTS20-02.mp4"
 # VIDEO_PATH = "../data/MOTS/train/MOTS20-09/MOTS20-09.mp4"
-VIDEO_PATH = "data/collected/test_rgb_1760411494.mp4"
+VIDEO_PATH = "videos/jestin_video_1_rgb.mp4"
 OUTPUT_PATH = "outputs/labeled.mp4"
 os.makedirs(os.path.dirname(OUTPUT_PATH) or ".", exist_ok=True)
 
@@ -77,6 +79,8 @@ def main():
 
 
         # START: AMELINE AND JESTINS PIPELINE HERE USING `PEOPLE_BOXES`
+
+            traditional_gaze_tracker(frame, (x, y, w, h), draw=True)
 
 
         # STOP: AMELINE AND JESTINS PIPELINE HERE
