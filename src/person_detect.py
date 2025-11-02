@@ -51,7 +51,7 @@ def detect_people_yolo(frame) -> List[List[float]]:
     Returns list of [x, y, w, h, score] using YOLOv8 (Ultralytics).
     Filters to class 0 (person). Uses model defaults (no extra NMS/filters here).
     """
-    results = yolo_model(frame, conf=0.60, iou=0.3, classes=[0], verbose=False) 
+    results = yolo_model(frame, conf=0.70, iou=0.5, classes=[0], verbose=False) 
     out: List[List[float]] = []
     for r in results:
         if r.boxes is None:
