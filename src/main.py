@@ -12,7 +12,7 @@ import person_detect as pd
 # ---------------- configuration ----------------
 # VIDEO_PATH = "../data/MOTS/train/MOTS20-02/MOTS20-02.mp4"
 # VIDEO_PATH = "../data/MOTS/train/MOTS20-09/MOTS20-09.mp4"
-VIDEO_PATH = "../data/collected/test_rgb_1760411494.mp4"
+VIDEO_PATH = "data/collected/test_rgb_1760411494.mp4"
 OUTPUT_PATH = "outputs/labeled.mp4"
 os.makedirs(os.path.dirname(OUTPUT_PATH) or ".", exist_ok=True)
 
