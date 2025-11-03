@@ -1,20 +1,27 @@
+import os
 import cv2
 import numpy as np
-import mediapipe as mp
 
-import cv2
-import mediapipe as mp
-import numpy as np
+def mediapipe_gaze_tracker(cap, face_mesh, output_path="outputs/mediapipe_pupil_detection.mp4"):
+    # Make sure output folder exists
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
+    # Video properties
+    frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    if fps == 0:
+        fps = 20  # fallback
 
+    # Define VideoWriter
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(output_path, fourcc, fps, (frame_width, frame_height))
 
-def mediapipe_gaze_tracker(cap, face_mesh): 
     while True:
         ret, frame = cap.read()
         if not ret:
             break
 
-        # Convert to RGB for MediaPipe
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results = face_mesh.process(rgb_frame)
 
@@ -31,38 +38,38 @@ def mediapipe_gaze_tracker(cap, face_mesh):
             RIGHT_EYE = [362, 263]
 
             def get_landmark_coords(index_list):
-                """Convert landmark indices to (x, y) pixel coords."""
                 return np.array([(int(face_landmarks.landmark[i].x * w),
-                                int(face_landmarks.landmark[i].y * h)) for i in index_list])
+                                  int(face_landmarks.landmark[i].y * h)) for i in index_list])
 
-            # Get iris centers
             left_iris = get_landmark_coords(LEFT_IRIS)
             right_iris = get_landmark_coords(RIGHT_IRIS)
 
             left_center = np.mean(left_iris, axis=0).astype(int)
             right_center = np.mean(right_iris, axis=0).astype(int)
 
-            # Get eye corners for context
             left_eye_corners = get_landmark_coords(LEFT_EYE)
             right_eye_corners = get_landmark_coords(RIGHT_EYE)
 
-            # Compute eye centers 
             left_eye_center = np.mean(left_eye_corners, axis=0).astype(int)
             right_eye_center = np.mean(right_eye_corners, axis=0).astype(int)
 
-            # Draw pupil centers 
+            # Draw pupil centers (red)
             cv2.circle(frame, tuple(left_center), 4, (0, 0, 255), -1)
             cv2.circle(frame, tuple(right_center), 4, (0, 0, 255), -1)
 
-            # Draw eye centers 
+            # Draw eye centers (cyan)
             cv2.circle(frame, tuple(left_eye_center), 4, (255, 255, 0), -1)
             cv2.circle(frame, tuple(right_eye_center), 4, (255, 255, 0), -1)
 
-        cv2.imshow("MediaPipe Face + Eye + Pupil Detection", frame)
+        # Write frame to output video
+        out.write(frame)
 
-        # Exit with ESC
+        # Optional: display live
+        cv2.imshow("MediaPipe Face + Eye + Pupil Detection", frame)
         if cv2.waitKey(5) & 0xFF == 27:
             break
 
     cap.release()
+    out.release()
     cv2.destroyAllWindows()
+    print(f"Video saved to {output_path}")

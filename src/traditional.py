@@ -2,11 +2,29 @@ import cv2
 import numpy as np
 import mediapipe as mp
 
-
+##################################### VIDEOS ##################################
 # cap = cv2.VideoCapture("test_AMELINE_30cm_eye_HD_rgb_1761970095.mp4")
 # cap = cv2.VideoCapture("test_JESTIN_30cm_eye_HD_rgb_1761970129.mp4")
 cap = cv2.VideoCapture("ameline_test_d-_rgb_1761129562.mp4")
 # cap = cv2.VideoCapture("ameline_with_light_rgb.mp4")
+
+################################# KALMAN FILTER ###############################
+
+def create_kalman():
+    kf = cv2.KalmanFilter(4, 2)  # [x, y, dx, dy] -> [x, y]
+    kf.measurementMatrix = np.array([[1, 0, 0, 0],
+                                     [0, 1, 0, 0]], np.float32)
+    kf.transitionMatrix = np.array([[1, 0, 1, 0],
+                                    [0, 1, 0, 1],
+                                    [0, 0, 1, 0],
+                                    [0, 0, 0, 1]], np.float32)
+    kf.processNoiseCov = np.eye(4, dtype=np.float32) * 0.03
+    kf.measurementNoiseCov = np.eye(2, dtype=np.float32) * 0.5
+    return kf
+
+# We'll create two separate filters for two eyes
+kf_left = create_kalman()
+kf_right = create_kalman()
 
 #################################### FUNCTIONS #################################
 
@@ -29,12 +47,36 @@ def detect_pupil_center_2(img):
     cY = int(M["m01"] / M["m00"])
     return (cX, cY)
 
+def detect_eye_center(img): 
+
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    img_copy = gray.copy()
+    mean = img_copy.mean()
+    stddev = img_copy.std()
+
+    mask = img_copy < (mean - 1 * stddev)
+    img_copy[mask] = 0
+
+    ys, xs = np.where(img_copy == 0)
+
+    if len(xs) > 0:
+        leftmost_zero = xs.min()
+        rightmost_zero = xs.max()
+
+        y_left = ys[xs == leftmost_zero]
+        y_right = ys[xs == rightmost_zero]
+
+        top_y = min(y_left.min(), y_right.min())
+        bottom_y = max(y_left.max(), y_right.max())
+        vertical_mid = (top_y + bottom_y) // 2
+
+        eye_center = ((leftmost_zero + rightmost_zero) // 2, bottom_y)
+        return eye_center
+    else: 
+        return None
+    
 
 def extend_gaze_vector(eye_center, pupil_center_abs, frame_size, board_size, scale=5.0):
-    """
-    Extend vector from eye center through pupil center.
-    Maps camera frame pixels -> board image pixels, centered on board.
-    """
     frame_w, frame_h = frame_size
     board_w, board_h = board_size
 
@@ -43,12 +85,12 @@ def extend_gaze_vector(eye_center, pupil_center_abs, frame_size, board_size, sca
 
 
     # Scale vector from camera frame to board size
-    gx = int(board_w/2 + dx * (board_w / frame_w) * scale)
+    gx = int(board_w/2 - dx * (board_w / frame_w) * scale)
     gy = int(board_h/2 + dy * (board_h / frame_h) * scale)
 
     # Clamp to board boundaries
-    gx = np.clip(gx, 0, board_w-1)
-    gy = np.clip(gy, 0, board_h-1)
+    # gx = np.clip(gx, 0, board_w-1)
+    # gy = np.clip(gy, 0, board_h-1)
 
     return gx, gy
 
@@ -60,15 +102,6 @@ board_img = cv2.imread("board.png")
 board_h, board_w = board_img.shape[:2]
 
 
-################################### MEDIAPIPE SETUP ################################
-
-mp_face_mesh = mp.solutions.face_mesh
-face_mesh = mp_face_mesh.FaceMesh(static_image_mode=False,
-                                  max_num_faces=1,
-                                  refine_landmarks=True,
-                                  min_detection_confidence=0.5,
-                                  min_tracking_confidence=0.5)
-
 while True:
     ret, frame = cap.read()
     if not ret:
@@ -79,7 +112,7 @@ while True:
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     eyes = eye_cascade.detectMultiScale(gray, 1.1, 5, minSize=(20, 20))
 
-    # Keep lower 2 eyes if >2 detected
+    # Keep lower 2 eyes 
     if len(eyes) > 2:
         eyes = sorted(eyes, key=lambda e: e[1])[1:]
 
@@ -97,6 +130,14 @@ while True:
 
         # Eye center in camera frame
         eye_center = (x + w//2, y + h//2)
+        # eye_center = detect_eye_center(eye_crop)
+
+        # eye_center_rel = detect_eye_center(eye_crop)
+        # if eye_center_rel is None:
+        #     continue
+
+        # # Convert to frame coordinates
+        # eye_center = (x + eye_center_rel[0], y + eye_center_rel[1])
 
         # Draw rectangles and points
         cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
@@ -107,7 +148,7 @@ while True:
         gx, gy = extend_gaze_vector(eye_center, pupil_center_abs,
                                     frame_size=(frame_w, frame_h),
                                     board_size=(board_w, board_h),
-                                    scale=30.0)
+                                    scale=32.0)
 
         # Draw gaze on board
         cv2.circle(gaze_visual, (gx, gy), 8, (0, 0, 255), -1)

@@ -34,7 +34,7 @@ face_mesh = mp_face_mesh.FaceMesh(
 def main(): 
     traditional_gaze_tracker(cap)
 
-    # mediapipe_gaze_tracker(cap, face_mesh)
+    mediapipe_gaze_tracker(cap, face_mesh)
 
 
     return 
