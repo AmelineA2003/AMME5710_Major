@@ -780,7 +780,7 @@ if __name__ == "__main__":
     # left_ear_cascade   = load_cascade('haarcascade_mcs_leftear.xml')
     # right_ear_cascade  = load_cascade('haarcascade_mcs_rightear.xml')
 
-    head = heads["jestinp_47_rgb.png"]
+    head = heads["jestinp_38_rgb.png"]
     # print(head.keys())
     img = head["im_rgb"].copy()
     height_m = head["im_height"].copy()
