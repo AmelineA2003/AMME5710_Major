@@ -54,6 +54,35 @@ def extend_gaze_vector(eye_center, pupil_center_abs, frame_size, board_size, sca
     gy = np.clip(gy, 0, board_h-1)
     return gx, gy
 
+
+def detect_eye_center(img): 
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    img_copy = gray.copy()
+    mean = img_copy.mean()
+    stddev = img_copy.std()
+
+    mask = img_copy < (mean - 1 * stddev)
+    img_copy[mask] = 0
+
+    ys, xs = np.where(img_copy == 0)
+
+    if len(xs) > 0:
+        leftmost_zero = xs.min()
+        rightmost_zero = xs.max()
+
+        y_left = ys[xs == leftmost_zero]
+        y_right = ys[xs == rightmost_zero]
+
+        top_y = min(y_left.min(), y_right.min())
+        bottom_y = max(y_left.max(), y_right.max())
+        vertical_mid = (top_y + bottom_y) // 2
+
+        eye_center = ((leftmost_zero + rightmost_zero) // 2, bottom_y)
+        return eye_center
+    else: 
+        return None
+    
+
 ############################# MEDIAPIPE SETUP #############################
 
 mp_face_mesh = mp.solutions.face_mesh
@@ -69,6 +98,14 @@ left_iris_idx = [468, 469, 470, 471]
 right_iris_idx = [473, 474, 475, 476]
 left_eye_bounds = [33, 133]
 right_eye_bounds = [362, 263]
+
+
+# Smoothing alpha
+alpha = 0.4
+
+# Previous gaze positions (MediaPipe and Haar)
+prev_gaze_mp = None
+prev_gaze_haar = None
 
 ############################# MAIN LOOP #############################
 
@@ -113,14 +150,23 @@ while True:
 
             # Draw on frame
             cv2.rectangle(frame_mp, (x_min, y_min), (x_max, y_max), (0,255,0), 2)
-            cv2.circle(frame_mp, pupil_center_abs, 4, (0,0,255), -1)
+            cv2.circle(frame_mp, pupil_center_abs, 5, (0,0,255), -1)
             cv2.circle(frame_mp, eye_center, 4, (255,255,0), -1)
 
             # Draw gaze on board
             gx, gy = extend_gaze_vector(eye_center, pupil_center_abs,
-                                        frame_size=(frame_w, frame_h),
-                                        board_size=(board_w, board_h))
-            cv2.circle(gaze_board_mp, (gx, gy), 8, (0,0,255), -1)
+                            frame_size=(frame_w, frame_h),
+                            board_size=(board_w, board_h))
+
+            # Apply EMA smoothing
+            if prev_gaze_mp is None:
+                smoothed_gaze_mp = (gx, gy)
+            else:
+                smoothed_gaze_mp = (int(alpha*gx + (1-alpha)*prev_gaze_mp[0]),
+                                    int(alpha*gy + (1-alpha)*prev_gaze_mp[1]))
+            prev_gaze_mp = smoothed_gaze_mp
+
+            cv2.circle(gaze_board_mp, smoothed_gaze_mp, 18, (0,0,255), -1)
 
     ####### Haar Cascade #######
     gray = cv2.cvtColor(frame_haar, cv2.COLOR_BGR2GRAY)
@@ -135,7 +181,13 @@ while True:
             continue
         px, py = pupil_center_rel
         pupil_center_abs = (x + px, y + py)
-        eye_center = (x + w//2, y + h//2)
+        # eye_center = (x + w//2, y + h//2)
+
+
+        eye_center_rel = detect_eye_center(eye_crop)
+        if eye_center_rel is None:
+            continue
+        eye_center = (x + eye_center_rel[0], y + eye_center_rel[1])
 
         # Draw on frame
         cv2.rectangle(frame_haar, (x,y), (x+w, y+h), (0,255,0), 2)
@@ -144,11 +196,20 @@ while True:
 
         # Draw gaze on board
         gx, gy = extend_gaze_vector(eye_center, pupil_center_abs,
-                                    frame_size=(frame_w, frame_h),
-                                    board_size=(board_w, board_h))
-        cv2.circle(gaze_board_haar, (gx, gy), 8, (0,0,255), -1)
+                            frame_size=(frame_w, frame_h),
+                            board_size=(board_w, board_h))
 
-    ####### Combine frame + board vertically, then methods horizontally #######
+        # Apply EMA smoothing
+        if prev_gaze_haar is None:
+            smoothed_gaze_haar = (gx, gy)
+        else:
+            smoothed_gaze_haar = (int(alpha*gx + (1-alpha)*prev_gaze_haar[0]),
+                                int(alpha*gy + (1-alpha)*prev_gaze_haar[1]))
+        prev_gaze_haar = smoothed_gaze_haar
+
+        cv2.circle(gaze_board_haar, smoothed_gaze_haar, 18, (0,0,255), -1)
+
+    # Combine all videos into one
     mp_combined = np.vstack((frame_mp, cv2.resize(gaze_board_mp, (frame_w, frame_h))))
     haar_combined = np.vstack((frame_haar, cv2.resize(gaze_board_haar, (frame_w, frame_h))))
     combined_vis = np.hstack((mp_combined, haar_combined))
