@@ -452,7 +452,7 @@ def GetHeadPose(face_cascade, eye_cascade, mouth_cascade, nose_cascade, img, hei
         return img2
 
     
-    # Drawing lines
+    # DRAWING LINES
     cv2.line(img2, (int(features["eye_left"][0]), int(features["eye_left"][1])), (int(features["right_mouth"][0]), int(features["right_mouth"][1])), (0, 255, 0), 1)
     cv2.line(img2, (int(features["eye_right"][0]), int(features["eye_right"][1])), (int(features["left_mouth"][0]), int(features["left_mouth"][1])), (0, 255, 0), 1)
 
@@ -462,16 +462,8 @@ def GetHeadPose(face_cascade, eye_cascade, mouth_cascade, nose_cascade, img, hei
     cv2.line(img2, (int(features["eye_left"][0]), int(features["eye_left"][1])), (int(features["left_mouth"][0]), int(features["left_mouth"][1])), (0, 255, 0), 1)
     cv2.line(img2, (int(features["eye_right"][0]), int(features["eye_right"][1])), (int(features["right_mouth"][0]), int(features["right_mouth"][1])), (0, 255, 0), 1)
 
-    # plt.imshow(img2)
 
-
-    # print(asymmetry_ratio * 180, " - yaw in degrees (approximate)")
-    # print(np.degrees(np.arcsin(asymmetry_ratio)), " - yaw in degrees (approximate)")
-
-    
-    # print(roll_deg, "Head roll (signed)")
-
-    # Pitch Calculation
+    # PITCH CALCULATION
 
     mid_to_mid = np.array([features["mid_mouth"][:2]]) - np.array([features["eye_midpoint"][:2]])
     # print(np.array([features["nose"][:2]]))
@@ -504,13 +496,8 @@ def GetHeadPose(face_cascade, eye_cascade, mouth_cascade, nose_cascade, img, hei
 
     pitch_deg = asymmetry_ratio_pitch * 180
 
-    # print(pitch_deg, "pitch")
-    # print(asymmetry_ratio, " - asymmetry ratio (right/left)")
-    # print(asymmetry_ratio_pitch * 180, " - pitch in degrees (approximate)")
-    # print(np.degrees(np.arcsin(asymmetry_ratio)), " - yaw in degrees (approximate)")
 
-    # Plotting midpoints
-    # print(-features["eye_midpoint"][1] + features["mid_mouth"][1])
+    # PLOTTING MIDPOINTS
 
     eye_midpoint = features["eye_midpoint"]
     # t1 = f"{int(eye_midpoint[0])}, {int(eye_midpoint[1])}"
