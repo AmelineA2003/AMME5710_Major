@@ -1,3 +1,8 @@
+""" 
+This file is used to read in and save camera data from the Intel RealSense stereo camera. 
+It includes features to save RGB and depth data, as well as pickle files containing data for each frame. 
+"""
+
 import os
 import time
 import pickle

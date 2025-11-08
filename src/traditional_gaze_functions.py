@@ -1,8 +1,56 @@
+""" 
+This file stores the functions for our traditional gaze tracking algorithms implemented. 
+It includes: 
+    - Method (1) of pupil detection 
+    - Method (2) of pupil detection 
+    - Method (1) of eye centre detection 
+    - Method (2) of eye centre detection
+    - Final integration function to integrate selected eye and pupil detection
+"""
+
 import cv2
 import numpy as np
 
 
 #################################### FUNCTIONS #################################
+def detect_pupil_center_1(img):
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    gray = cv2.medianBlur(gray, 5)
+    gray = cv2.equalizeHist(gray)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(4,4))
+    gray = clahe.apply(gray)
+    kernel = np.ones((3,3), np.uint8)
+    gray = cv2.morphologyEx(gray, cv2.MORPH_OPEN, kernel, iterations=1)  # remove small bright noise
+    gray = cv2.morphologyEx(gray, cv2.MORPH_CLOSE, kernel, iterations=1) # fill small dark holes
+
+    _, mask = cv2.threshold(gray, 130, 255, cv2.THRESH_BINARY_INV)
+    gray = cv2.bitwise_and(gray, gray, mask=mask)
+
+    # Detect circles using HoughCircles
+    circles = cv2.HoughCircles(
+        gray,
+        cv2.HOUGH_GRADIENT,
+        dp=1,            # Inverse ratio of accumulator resolution
+        minDist=gray.shape[0],  # Minimum distance between circle centers
+        param1=100,      # Higher threshold for Canny edge detector
+        param2=23,       # Accumulator threshold for circle detection (smaller -> more circles)
+        minRadius=40,    # Minimum possible circle radius
+        maxRadius=90     # Maximum possible circle radius
+    )
+    # If circles are found, draw them
+    if circles is not None:
+        circles = np.uint16(np.around(circles))
+        for (x, y, r) in circles[0, :]:
+            cv2.circle(img, (x, y), r, (0, 255, 0), 2)  # outer circle
+            cv2.circle(img, (x, y), 2, (0, 0, 255), 3)  # centroid
+            cX = x 
+            cY = y
+    
+        return (cX, cY) 
+    else:
+        return None
+
+
 
 def detect_pupil_center_2(img):
     inverted = cv2.bitwise_not(img)
@@ -25,7 +73,8 @@ def detect_pupil_center_2(img):
 
 
 def detect_eye_center(img): 
-    img_copy = img.copy()
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    img_copy = gray.copy()
     mean = img_copy.mean()
     stddev = img_copy.std()
 
@@ -53,26 +102,12 @@ def detect_eye_center(img):
 
 def detect_eye_center_2(img): 
 
-    # gray = cv2.GaussianBlur(img, (5,5), 0)
-
     gray = cv2.medianBlur(img, 5)
     
-    # thresh = cv2.adaptiveThreshold(
-    #     gray, 255,
-    #     cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-    #     cv2.THRESH_BINARY_INV,
-    #     blockSize=11,  # neighborhood size
-    #     C=5           # constant to subtract
-    # )
-
     _, thresh = cv2.threshold(
     gray, 100, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU
     )   
 
-    # mean = np.mean(gray)
-    # _, thresh = cv2.threshold(gray, mean*0.6, 255, cv2.THRESH_BINARY_INV)
-
-    
     # Morphological operations to merge regions 
     kernel = np.ones((3,3), np.uint8)
     thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel, iterations=1)
@@ -95,6 +130,7 @@ def detect_eye_center_2(img):
             
 
 
+
 def traditional_gaze_tracker(cap, output_path="outputs/pupil_detection.mp4"):
     # Create outputs folder if not exist
     import os
@@ -108,7 +144,7 @@ def traditional_gaze_tracker(cap, output_path="outputs/pupil_detection.mp4"):
     frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = cap.get(cv2.CAP_PROP_FPS)
-    if fps == 0:  # fallback if unable to get FPS
+    if fps == 0:  
         fps = 20
 
     # Define VideoWriter
@@ -149,7 +185,7 @@ def traditional_gaze_tracker(cap, output_path="outputs/pupil_detection.mp4"):
                     cv2.rectangle(frame, (abs_x, abs_y), (abs_x+ew, abs_y+eh), (0, 255, 0), 2)
 
                     pupil_center_rel = detect_pupil_center_2(eye_crop)
-                    eye_center = detect_eye_center(gray_eye)
+                    eye_center = detect_eye_center(eye_crop)
 
                     if pupil_center_rel is not None and eye_center is not None:
                         # Absolute coordinates

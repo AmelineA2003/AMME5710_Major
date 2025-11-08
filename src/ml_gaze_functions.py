@@ -1,9 +1,13 @@
+""" 
+This file stores the functions for the MediaPipe gaze tracking to be used for comparison. 
+"""
+
+
 import os
 import cv2
 import numpy as np
 
 def mediapipe_gaze_tracker(cap, face_mesh, output_path="outputs/mediapipe_pupil_detection.mp4"):
-    # Make sure output folder exists
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
     # Video properties
@@ -11,7 +15,7 @@ def mediapipe_gaze_tracker(cap, face_mesh, output_path="outputs/mediapipe_pupil_
     frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = cap.get(cv2.CAP_PROP_FPS)
     if fps == 0:
-        fps = 20  # fallback
+        fps = 20  
 
     # Define VideoWriter
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
@@ -53,18 +57,18 @@ def mediapipe_gaze_tracker(cap, face_mesh, output_path="outputs/mediapipe_pupil_
             left_eye_center = np.mean(left_eye_corners, axis=0).astype(int)
             right_eye_center = np.mean(right_eye_corners, axis=0).astype(int)
 
-            # Draw pupil centers (red)
+            # Draw pupil centers 
             cv2.circle(frame, tuple(left_center), 4, (0, 0, 255), -1)
             cv2.circle(frame, tuple(right_center), 4, (0, 0, 255), -1)
 
-            # Draw eye centers (cyan)
+            # Draw eye centers 
             cv2.circle(frame, tuple(left_eye_center), 4, (255, 255, 0), -1)
             cv2.circle(frame, tuple(right_eye_center), 4, (255, 255, 0), -1)
 
         # Write frame to output video
         out.write(frame)
 
-        # Optional: display live
+        # Display
         cv2.imshow("MediaPipe Face + Eye + Pupil Detection", frame)
         if cv2.waitKey(5) & 0xFF == 27:
             break
@@ -72,4 +76,3 @@ def mediapipe_gaze_tracker(cap, face_mesh, output_path="outputs/mediapipe_pupil_
     cap.release()
     out.release()
     cv2.destroyAllWindows()
-    print(f"Video saved to {output_path}")
