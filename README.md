@@ -16,3 +16,5 @@
 
 #### Wednesday Week 12: 
 - Film demo at someones house/setup somewhere
+
+Use Pickle_img.py and Pickle_vid.py to generate data to be used for GetHeadPose.py and GetHeadPoseVideo.py respectively
