@@ -3,7 +3,6 @@ This file acts as the main file to run the implemented traditional and MediaPipe
 
 """
 
-
 import cv2
 import numpy as np
 import mediapipe as mp
