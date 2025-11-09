@@ -57,7 +57,7 @@ RULES_MOTION_BIN_THRESH = 165          # threshold on MOG2/other masks to binari
 
 # ACCUM (running average) params — baseline for stop-and-go mall scene
 RULES_ACCUM_ALPHA   = 0.010            # slowish learning; paused people don’t vanish
-RULES_ACCUM_THRESH  = 32               # raise to cut flicker (26–32 typical)
+RULES_ACCUM_THRESH  = 32               # raise to cut flicker (26-32 typical)
 
 # MEDIAN (rolling temporal median) params
 RULES_MEDIAN_WINDOW = 21               # (unused in ACCUM)
@@ -91,7 +91,7 @@ RULES_PROCESS_EVERY_N = 1
 
 # ---- Minimal stabilisers between diff -> mask ----
 RULES_DIFF_BLUR_K = 12                 # Gaussian blur before threshold
-RULES_MASK_TEMPORAL_ALPHA = 0.23       # EMA to dampen mask flicker (0.15–0.25 good)
+RULES_MASK_TEMPORAL_ALPHA = 0.23       # EMA to dampen mask flicker (0.15-0.25 good)
 RULES_MIN_CC_AREA_FRAC = 0.0007        # prune tiny components (~0.06% of frame)
 
 # -----------------------------
@@ -136,6 +136,19 @@ _mask_ema: Optional[np.ndarray] = None
 # Utils
 # -----------------------------
 def _nms_xywh(dets: List[List[float]], iou_thresh: float) -> List[List[float]]:
+    """Greedy Non-Max Suppression for [x, y, w, h, score] boxes.
+
+    Args:
+        dets: List of detections where each item is [x, y, w, h, score].
+        iou_thresh: IoU threshold for suppression (0-1).
+
+    Returns:
+        A filtered list of detections (same format) after NMS.
+
+    Notes:
+        - Uses scores to sort descending and suppresses boxes with IoU > threshold.
+        - Coordinates are treated as inclusive of width/height (x+w, y+h).
+    """
     if not dets:
         return []
     boxes = np.array([[d[0], d[1], d[0]+d[2], d[1]+d[3]] for d in dets], dtype=np.float32)
@@ -159,20 +172,44 @@ def _nms_xywh(dets: List[List[float]], iou_thresh: float) -> List[List[float]]:
     return [dets[i] for i in keep_idxs]
 
 def _clip_box_to_image(x, y, w, h, W, H):
+    """Clip a box to image bounds and return a valid [x, y, w, h].
+
+    Args:
+        x: X coordinate of the top-left corner.
+        y: Y coordinate of the top-left corner.
+        w: Width of the box.
+        h: Height of the box.
+        W: Image width.
+        H: Image height.
+
+    Returns:
+        A list [x, y, w, h] clipped to the image boundary (non-negative sizes).
+    """
     x = max(0, x); y = max(0, y)
     x2 = min(W, x + w); y2 = min(H, y + h)
     x = min(x, max(0, x2 - 1)); y = min(y, max(0, y2 - 1))
     return [x, y, max(0, x2 - x), max(0, y2 - y)]
 
 def _get_mog2_background() -> Optional[np.ndarray]:
-    """Return BGR background snapshot from MOG2 (None in early frames)."""
+    """Fetch a BGR background snapshot from the MOG2 subtractor.
+
+    Returns:
+        A background image in BGR if available; otherwise ``None`` (e.g., early frames).
+    """
     try:
         return _bg.getBackgroundImage()
     except Exception:
         return None
 
 def _edge_heatmap_u8(frame: np.ndarray) -> np.ndarray:
-    """Return 8-bit gradient magnitude image for visualising edges."""
+    """Compute an 8-bit gradient-magnitude (edge) heatmap.
+
+    Args:
+        frame: Input frame in BGR format (HxWx3, uint8).
+
+    Returns:
+        A single-channel uint8 image (HxW) with edge magnitudes scaled to 0-255.
+    """
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     gx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
     gy = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
@@ -181,6 +218,20 @@ def _edge_heatmap_u8(frame: np.ndarray) -> np.ndarray:
     return mag.astype(np.uint8)
 
 def _shape_fullbody(dets, target_ar=0.45, expand=0.12):
+    """Resize boxes toward a target aspect ratio and optionally expand.
+
+    Args:
+        dets: Iterable of detections [x, y, w, h, score].
+        target_ar: Desired width/height aspect ratio (e.g., 0.45 for full body).
+        expand: Fractional expansion to apply to both width and height.
+
+    Returns:
+        A list of adjusted detections [x, y, w, h, score].
+
+    Notes:
+        Keeps the box center fixed; widens or heightens as needed to meet `target_ar`,
+        then expands by `expand`.
+    """
     shaped = []
     for x, y, w, h, s in dets:
         if h <= 0:
@@ -206,11 +257,30 @@ def _shape_fullbody(dets, target_ar=0.45, expand=0.12):
 
 # Resolution-aware derivation helpers
 def _round_odd(n: float) -> int:
+    """Round to nearest integer and make it odd (min 1).
+
+    Args:
+        n: Input value.
+
+    Returns:
+        An odd integer >= 1.
+    """
     n = max(1, int(round(n)))
     return n if n % 2 == 1 else n + 1
 
 def _derive_rules_params(H: int, W: int):
-    """Derive pixel thresholds from resolution-invariant fractions."""
+    """Derive pixel-space thresholds from resolution-invariant fractions.
+
+    Args:
+        H: Frame height in pixels.
+        W: Frame width in pixels.
+
+    Returns:
+        Dict with:
+            - ``MIN_AREA_PX``: Minimum contour area in pixels.
+            - ``K_OPEN``: Odd kernel size for morphological open (pixels).
+            - ``K_CLOSE``: Odd kernel size for morphological close (pixels).
+    """
     frame_area = float(H * W)
     short_side = float(min(H, W))
 
@@ -233,7 +303,15 @@ def _derive_rules_params(H: int, W: int):
 # ML-free background helpers
 # -----------------------------
 def _init_bg_buffers(H: int, W: int):
-    """Ensure buffers have correct shapes/capacity for current resolution."""
+    """Ensure per-mode background buffers match the current resolution.
+
+    Args:
+        H: Frame height in pixels.
+        W: Frame width in pixels.
+
+    Side Effects:
+        Initializes or resizes global buffers for ACCUM, MEDIAN, or DIFF modes.
+    """
     global _bg_accum_f32, _bg_median_buf, _prev_gray_buf
     if RULES_BG_MODE == "ACCUM":
         if _bg_accum_f32 is None or _bg_accum_f32.shape != (H, W):
@@ -246,7 +324,18 @@ def _init_bg_buffers(H: int, W: int):
             _prev_gray_buf = deque(maxlen=RULES_DIFF_STRIDE + 1)
 
 def _apply_diff_blur_and_threshold(diff_u8: np.ndarray) -> np.ndarray:
-    """Minimal stabilisation from abs-diff to binary mask (0/1)."""
+    """Stabilize absolute difference into a binary mask via blur/threshold/EMA.
+
+    Args:
+        diff_u8: Single-channel uint8 abs-difference image (HxW).
+
+    Returns:
+        A binary mask (uint8) with values {0,1} after optional Gaussian blur,
+        fixed threshold (mode-dependent), and temporal EMA smoothing.
+
+    Notes:
+        EMA uses a global buffer `_mask_ema`; first call seeds the state.
+    """
     d = diff_u8
     # 1) Optional pre-threshold blur
     if RULES_DIFF_BLUR_K and RULES_DIFF_BLUR_K >= 3:
@@ -279,9 +368,25 @@ def _apply_diff_blur_and_threshold(diff_u8: np.ndarray) -> np.ndarray:
     return m  # {0,1}
 
 def _bg_and_mask(frame: np.ndarray) -> Tuple[Optional[np.ndarray], np.ndarray, np.ndarray]:
-    """
-    Returns (bg_bgr, mask_bin, absdiff_u8) for selected RULES_BG_MODE.
-    bg_bgr may be None in very early frames.
+    """Compute background image, binary motion mask, and abs-diff for current frame.
+
+    Behavior depends on ``RULES_BG_MODE``:
+      - ``ACCUM``: running average in grayscale.
+      - ``MEDIAN``: rolling temporal median over last N frames.
+      - ``DIFF``: difference w.r.t. frame at stride k.
+      - ``MOG2``: OpenCV Gaussian Mixture Model subtractor.
+
+    Args:
+        frame: Input frame in BGR format (HxWx3, uint8).
+
+    Returns:
+        Tuple of:
+            - bg_bgr (Optional[np.ndarray]): Background snapshot in BGR (or None if not ready).
+            - mask (np.ndarray): Binary motion mask {0,1}, uint8 shape HxW.
+            - diff (np.ndarray): Abs difference image vs background (uint8 HxW).
+
+    Notes:
+        Early frames may return None background for MEDIAN/DIFF/MOG2 until ready.
     """
     H, W = frame.shape[:2]
     _init_bg_buffers(H, W)
@@ -337,6 +442,20 @@ def _bg_and_mask(frame: np.ndarray) -> Tuple[Optional[np.ndarray], np.ndarray, n
 
 # OPTIONAL: WBF-like merge (HOG path)
 def _wbf_merge(dets: List[List[float]], score_thresh: float, iou: float) -> List[List[float]]:
+    """Weighted Box Fusion-like merge for HOG detections.
+
+    Args:
+        dets: Detections as [x, y, w, h, score].
+        score_thresh: Minimum score required to include a box in fusion.
+        iou: IoU threshold to consider boxes part of the same cluster.
+
+    Returns:
+        A list of fused detections [x, y, w, h, score], one per cluster.
+
+    Notes:
+        This is a simplified, single-class WBF approximation; it chooses the
+        max score in a cluster, and weighted averages for coordinates/sizes.
+    """
     dets = sorted([d for d in dets if d[4] >= score_thresh], key=lambda d: d[4], reverse=True)
     if not dets: return []
     used = [False]*len(dets)
@@ -370,7 +489,32 @@ def _wbf_merge(dets: List[List[float]], score_thresh: float, iou: float) -> List
 # RULES detector (rich debug, resolution-aware)
 # -----------------------------
 def detect_people_rules(frame: np.ndarray, frame_idx: int = 0) -> Tuple[List[List[float]], Dict[str, List[List[float]]]]:
-    """RULES detector with debug artefacts. Returns (final_boxes, debug_dict)."""
+    """Detect people using the RULES (non-ML) pipeline with debug artefacts.
+
+    Pipeline:
+      1) Background modeling → abs-diff → binary mask (mode-dependent)
+      2) Tiny-component pruning + morphology (open/close)
+      3) Contours → boxes with geometric gates (area, aspect ratio)
+      4) Motion-overlap gate
+      5) Edge-density gate
+      6) NMS
+      7) Full-body shaping (aspect-ratio normalization + expansion)
+
+    Args:
+        frame: Input BGR frame (HxWx3, uint8).
+        frame_idx: Frame index (unused by most modes, but kept for API parity).
+
+    Returns:
+        A tuple ``(final, debug)`` where:
+          - ``final``: List of final detections [x, y, w, h, score].
+          - ``debug``: Dict of per-stage results including:
+              * box lists: 'contours','filtered','edges_ok','nms','shaped','final'
+              * images: 'img_bg' (BGR or None), 'img_mask' ({0,1}), 'img_diff' (u8),
+                        'img_edge' (u8)
+
+    Notes:
+        Resolution-aware thresholds are derived from fractions each call.
+    """
     debug: Dict[str, List[List[float]]] = {}
     H, W = frame.shape[:2]
 
@@ -380,7 +524,7 @@ def detect_people_rules(frame: np.ndarray, frame_idx: int = 0) -> Tuple[List[Lis
     K_OPEN  = d["K_OPEN"]
     K_CLOSE = d["K_CLOSE"]
 
-    # 0–1) Background + mask + abs-diff (mode-dependent)
+    # 0-1) Background + mask + abs-diff (mode-dependent)
     bg_img, mask, diff_u8 = _bg_and_mask(frame)
 
     # 1a) Optional pre-contour tiny-component pruning (resolution-invariant)
@@ -461,6 +605,15 @@ def detect_people_rules(frame: np.ndarray, frame_idx: int = 0) -> Tuple[List[Lis
 # HOG backend (portable call)
 # -----------------------------
 def detect_people_hog(frame) -> List[List[float]]:
+    """Detect people using OpenCV's HOG + SVM full-body detector.
+
+    Args:
+        frame: Input BGR frame (HxWx3, uint8).
+
+    Returns:
+        List of shaped detections [x, y, w, h, score] after (optional) NMS/WBF
+        and aspect-ratio normalization + expansion.
+    """
     try:
         rects, weights = hog.detectMultiScale(
             frame,
@@ -487,6 +640,17 @@ def detect_people_hog(frame) -> List[List[float]]:
 # YOLO backend
 # -----------------------------
 def detect_people_yolo(frame) -> List[List[float]]:
+    """Detect people using a YOLOv8 model (class 0: person).
+
+    Args:
+        frame: Input BGR frame (HxWx3, uint8).
+
+    Returns:
+        List of detections [x, y, w, h, score] in pixel coordinates.
+
+    Raises:
+        AttributeError: If the YOLO model is not initialized.
+    """
     results = yolo_model(frame, conf=0.60, iou=0.7, classes=[0], verbose=False)
     out: List[List[float]] = []
     for r in results:
@@ -507,7 +671,15 @@ def detect_people_yolo(frame) -> List[List[float]]:
 # Public APIs
 # -----------------------------
 def detect_people(frame: np.ndarray, frame_idx: int = 0) -> List[List[float]]:
-    """Return [[x,y,w,h,score], ...] from the selected backend."""
+    """Unified people detector entry point (RULES/HOG/YOLO).
+
+    Args:
+        frame: Input BGR frame (HxWx3, uint8).
+        frame_idx: Frame index (passed to RULES path for completeness).
+
+    Returns:
+        List of detections [x, y, w, h, score] from the selected backend.
+    """
     if DETECTOR_MODE == "YOLO" and (yolo_model is not None):
         return detect_people_yolo(frame)
     if DETECTOR_MODE == "HOG" and (hog is not None):
@@ -516,12 +688,23 @@ def detect_people(frame: np.ndarray, frame_idx: int = 0) -> List[List[float]]:
     return final
 
 def detect_people_debug(frame: np.ndarray, frame_idx: int = 0):
-    """
-    Returns (final_dets, debug) with per-stage outputs.
-    For RULES: keys = 'contours','filtered','edges_ok','nms','shaped','final'
-               and image artefacts 'img_bg','img_mask','img_diff','img_edge'
-    For HOG:   keys = 'raw','nms','shaped','final'
-    For YOLO:  keys = 'final'
+    """Detect people and return per-stage debug outputs for the active backend.
+
+    Args:
+        frame: Input BGR frame (HxWx3, uint8).
+        frame_idx: Frame index (used by RULES; ignored by HOG/YOLO).
+
+    Returns:
+        Tuple ``(final_dets, debug)`` where:
+          - ``final_dets``: List of final detections [x, y, w, h, score].
+          - ``debug``: Backend-specific dictionary:
+              * RULES: 'contours','filtered','edges_ok','nms','shaped','final'
+                        and image artefacts 'img_bg','img_mask','img_diff','img_edge'
+              * HOG:   'raw','nms','shaped','final'
+              * YOLO:  'final'
+
+    Notes:
+        Intended for visualization, inspection, and algorithm debugging.
     """
     debug: Dict[str, List[List[float]]] = {}
     if DETECTOR_MODE == "YOLO" and (yolo_model is not None):
