@@ -2,9 +2,9 @@
 This project introduces a lightweight, real-time computer vision pipeline for quantifying human attention during advertisement engagement.
 
 It has three main stages: 
-(1) Person Detection and Identification 
-(2) Head Pose Estimation 
-(3) Gaze Tracking
+1. Person Detection and Identification
+2. Head Pose Estimation
+3. Gaze Tracking
 
 
 ## Project Structure
