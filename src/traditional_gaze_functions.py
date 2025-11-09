@@ -13,6 +13,11 @@ import numpy as np
 
 
 #################################### FUNCTIONS #################################
+
+""" 
+This function refers to Method (1) for pupil center detection. 
+It returns the x-y pixel coordinates of the pupil center. 
+"""
 def detect_pupil_center_1(img):
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     gray = cv2.medianBlur(gray, 5)
@@ -30,14 +35,14 @@ def detect_pupil_center_1(img):
     circles = cv2.HoughCircles(
         gray,
         cv2.HOUGH_GRADIENT,
-        dp=1,            # Inverse ratio of accumulator resolution
-        minDist=gray.shape[0],  # Minimum distance between circle centers
-        param1=100,      # Higher threshold for Canny edge detector
-        param2=23,       # Accumulator threshold for circle detection (smaller -> more circles)
-        minRadius=40,    # Minimum possible circle radius
-        maxRadius=90     # Maximum possible circle radius
+        dp=1,                    # Inverse ratio of accumulator resolution
+        minDist=gray.shape[0],   # Minimum distance between circle centers
+        param1=100,              # Higher threshold for Canny edge detector
+        param2=23,               # Accumulator threshold for circle detection
+        minRadius=40,            # Minimum possible circle radius
+        maxRadius=90             # Maximum possible circle radius
     )
-    # If circles are found, draw them
+
     if circles is not None:
         circles = np.uint16(np.around(circles))
         for (x, y, r) in circles[0, :]:
@@ -51,7 +56,10 @@ def detect_pupil_center_1(img):
         return None
 
 
-
+""" 
+This function refers to the final implemented Method, Method (2), for pupil center detection. 
+It returns the x-y pixel coordinates of the pupil center. 
+"""
 def detect_pupil_center_2(img):
     inverted = cv2.bitwise_not(img)
     gray = cv2.cvtColor(inverted, cv2.COLOR_BGR2GRAY)
@@ -72,34 +80,11 @@ def detect_pupil_center_2(img):
     return (cX, cY)
 
 
-def detect_eye_center(img): 
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    img_copy = gray.copy()
-    mean = img_copy.mean()
-    stddev = img_copy.std()
 
-    mask = img_copy < (mean - 1 * stddev)
-    img_copy[mask] = 0
-
-    ys, xs = np.where(img_copy == 0)
-
-    if len(xs) > 0:
-        leftmost_zero = xs.min()
-        rightmost_zero = xs.max()
-
-        y_left = ys[xs == leftmost_zero]
-        y_right = ys[xs == rightmost_zero]
-
-        top_y = min(y_left.min(), y_right.min())
-        bottom_y = max(y_left.max(), y_right.max())
-        vertical_mid = (top_y + bottom_y) // 2
-
-        eye_center = ((leftmost_zero + rightmost_zero) // 2, bottom_y)
-        return eye_center
-    else: 
-        return None
-    
-
+""" 
+This function refers to Method (1) for eye center detection. 
+It returns the x-y pixel coordinates of the eye center. 
+"""
 def detect_eye_center_2(img): 
 
     gray = cv2.medianBlur(img, 5)
@@ -129,8 +114,44 @@ def detect_eye_center_2(img):
     return eye_center
             
 
+""" 
+This function refers to the final implemented Method, Method (2), for eye center detection. 
+It returns the x-y pixel coordinates of the eye center. 
+"""
+def detect_eye_center(img): 
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    img_copy = gray.copy()
+    mean = img_copy.mean()
+    stddev = img_copy.std()
+
+    mask = img_copy < (mean - 1 * stddev)
+    img_copy[mask] = 0
+
+    ys, xs = np.where(img_copy == 0)
+
+    if len(xs) > 0:
+        leftmost_zero = xs.min()
+        rightmost_zero = xs.max()
+
+        y_left = ys[xs == leftmost_zero]
+        y_right = ys[xs == rightmost_zero]
+
+        top_y = min(y_left.min(), y_right.min())
+        bottom_y = max(y_left.max(), y_right.max())
+        vertical_mid = (top_y + bottom_y) // 2
+
+        eye_center = ((leftmost_zero + rightmost_zero) // 2, bottom_y)
+        return eye_center
+    else: 
+        return None
 
 
+""" 
+This function implements the full gaze tracking pipeline on an incoming video stream. 
+It implements the final algorithms used in our pipeline: 
+    - detect_pupil_center_2
+    - detect_eye_center
+"""
 def traditional_gaze_tracker(cap, output_path="outputs/pupil_detection.mp4"):
     # Create outputs folder if not exist
     import os
@@ -200,7 +221,6 @@ def traditional_gaze_tracker(cap, output_path="outputs/pupil_detection.mp4"):
         # Write frame to video
         out.write(frame)
 
-        # Optional: display live
         cv2.imshow("Face + Eye + Pupil Detection", frame)
         if cv2.waitKey(5) & 0xFF == 27:  # ESC to exit
             break

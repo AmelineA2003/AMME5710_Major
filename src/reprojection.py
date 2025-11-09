@@ -29,7 +29,10 @@ out = cv2.VideoWriter(
 eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_eye.xml")
 
 ############################# FUNCTIONS #############################
-
+""" 
+This function defines the geometry for gaze reprojection onto the advertisement board. 
+It multiplies the dx and dy distances by the depth of the subject (scale)
+"""
 def extend_gaze_vector(eye_center, pupil_center_abs, frame_size, board_size, scale=32.0):
     frame_w, frame_h = frame_size
     board_w, board_h = board_size
@@ -63,7 +66,7 @@ left_eye_bounds = [33, 133]
 right_eye_bounds = [362, 263]
 
 
-# Smoothing alpha
+# Smoothing alpha to smooth gaze reprojection
 alpha = 0.4
 
 # Previous gaze positions 
@@ -71,7 +74,12 @@ prev_gaze_mp = None
 prev_gaze_haar = None
 
 ############################# MAIN LOOP #############################
+""" 
+This loop reads in an input video. 
 
+For each frame, it calculates the eye center and pupil center using our methods, comparing it to MediaPipe. 
+The gaze from each method is then reprojected onto a board. 
+"""
 while True:
     ret, frame = cap.read()
     if not ret:
@@ -161,7 +169,7 @@ while True:
                             frame_size=(frame_w, frame_h),
                             board_size=(board_w, board_h))
 
-        # Apply EMA smoothing
+        # Apply smoothing
         if prev_gaze_haar is None:
             smoothed_gaze_haar = (gx, gy)
         else:

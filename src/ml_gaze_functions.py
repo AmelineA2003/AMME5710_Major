@@ -1,5 +1,5 @@
 """ 
-This file stores the functions for the MediaPipe gaze tracking to be used for comparison. 
+This file stores the function for the MediaPipe gaze tracking to be used for comparison. 
 """
 
 
