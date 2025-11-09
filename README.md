@@ -1,7 +1,13 @@
+## Project Structure
+- MAIN branch: Integration of the Person Detection and Gaze Tracking stages can be found on the main branch.
+- submission/... branches: These branches store the final code used in our algorithm. 
+
+
+
 ## TIMELINE
 
 #### Tuesday Week 10: 
-- Data collectiom
+- Data collection
 - Defined layout of assignment + what data is needed for each section
 
 #### Friday Week 10: 
