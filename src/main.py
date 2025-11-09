@@ -16,8 +16,8 @@ from ml_gaze_functions import mediapipe_gaze_tracker
 # cap = cv2.VideoCapture("videos/test_JESTIN_30cm_eye_HD_rgb_1761970129.mp4")
 # cap = cv2.VideoCapture("videos/ameline_test_d-_rgb_1761129562.mp4")
 # cap = cv2.VideoCapture("videos/ameline_with_light_rgb.mp4")
-# cap = cv2.VideoCapture("videos/IMG_0595.mp4")
-cap = cv2.VideoCapture("videos/IMG_0588.mp4")
+cap = cv2.VideoCapture("videos/IMG_0595.mp4")
+# cap = cv2.VideoCapture("videos/IMG_0588.mp4")
 # cap = cv2.VideoCapture("videos/jestin_video_1_rgb.mp4")
 # cap = cv2.VideoCapture("videos/jestin_video_2_rgb.mp4")
 
@@ -45,7 +45,7 @@ def main():
     traditional_gaze_tracker(cap)
 
     # Call MediaPipe implementation
-    mediapipe_gaze_tracker(cap, face_mesh)
+    # mediapipe_gaze_tracker(cap, face_mesh)
 
 
     return 

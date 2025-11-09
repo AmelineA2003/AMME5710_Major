@@ -152,7 +152,7 @@ It implements the final algorithms used in our pipeline:
     - detect_pupil_center_2
     - detect_eye_center
 """
-def traditional_gaze_tracker(cap, output_path="outputs/pupil_detection.mp4"):
+def traditional_gaze_tracker(cap, output_path="outputs/traditional_pupil_detection.mp4"):
     # Create outputs folder if not exist
     import os
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
